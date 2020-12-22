@@ -1,12 +1,93 @@
+
+split_data = function(data, ratio=c(6,2,2), seed=333){
+  # splits the data into training-validation-test sets. Default = 6-2-2
+  # output g is the partition that can be used to split data and Missing (and probMissing optionally).
+  ratio = ratio/sum(ratio) # if ratio doesn't sum to 1
+  set.seed(333)
+  g = sample(cut(
+    seq(nrow(data)),
+    nrow(data)*cumsum(c(0,ratio)),
+    labels = c("train","valid","test")
+  ))
+  return(g)
+}
+
+###### NEED TO CREATE simulate_data() function: called from read_data, and input simulation parameters #####
+#' Simulate data
+#'
+#' @param N
+#' @param D
+#' @param P
+#' @param sim_index
+#' @param seed
+#' @param ratio Train-valid-test ratio for splitting of observations
+#' @param g_seed Seed for train-valid-test dataset splitting of observations
+#' @return list of objects: data (N x P matrix), classes (subgroups of observations), params (those used for simulating data), and g (partitioning of data into train-valid-test sets)
+#' @examples
+#' simulate_data(N = 10000, D = 2, P = 8, sim_index = 1)
+#' @export
+simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(6,2,2), g_seed = 333){
+  # simulate data by simulating D-dimensional Z latent variable for N observations
+  # and then apply W and B (both drawn from N(0,1)) weights and biases to obtain X
+  set.seed(seed)
+  Z=matrix(nrow=N,ncol=D)
+  for(d in 1:D){
+    Z[,d]=rnorm(N,mean=0,sd=1)
+  }
+  W = matrix(nrow=D,ncol=P) # weights
+  B = matrix(nrow=N,ncol=P) # biases
+  for(p in 1:P){
+    W[,p]=rnorm(D,mean=0,sd=1)
+    B[,p]=rnorm(N,mean=0,sd=1)
+  }
+  X = Z%*%W + B
+  data = X
+  classes=rep(1,N)
+  params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed)
+
+  # ## simulate clustered data?
+  # if(dataset=="TOYZ_CLUSTER"){
+  #   N=100000; D=2; P=8; seed=9*sim_index
+  #   set.seed(seed)
+  #   classes=sample(c(1,2,3,4),N,replace=T)
+  #
+  #   Z=matrix(nrow=N,ncol=D)
+  #   for(d in 1:D){
+  #     for(c in 1:length(unique(classes))){
+  #       Z[classes==c,d]=rnorm(sum(classes==c),mean=0+c*3,sd=1)
+  #     }
+  #   }
+  #   W = matrix(nrow=D,ncol=P) # weights
+  #   B = matrix(nrow=N,ncol=P) # biases
+  #   for(p in 1:P){
+  #     W[,p]=rnorm(D,mean=0,sd=1)
+  #     B[,p]=rnorm(N,mean=0,sd=1)
+  #   }
+  #   X = Z%*%W + B
+  #   data = X
+  #   params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed)
+  # }
+
+  set.seed(g_seed)
+  g = split_data(data=data, ratio=ratio)
+  return(list(data=data, classes=classes, params=params, g=g))
+}
+
+
+
+
+###### NEED TO ADJUST INPUTS FOR SIMULATIONS, AND INCORPORATE simulate_data() function #####
 #' Read UCI or Physionet 2012 Challenge Data
 #'
-#' @param dataset String for name of dataset. Valid datasets: "BANKNOTE","...."
-#' @param sim_params List of simulation parameters (N, D, P, seed)
-#' @param sim_index Index of simulation run (for setting seeds)
-#' @return list of objects: data (N x P matrix), classes (subgroups of observations), and params (those used for simulating data)
+#' @param dataset String for name of dataset. Valid datasets: "BANKNOTE","....".
+#' @param ratio Train-valid-test ratio for splitting of observations
+#' @param g_seed Seed for train-valid-test dataset splitting of observations
+#' @return list of objects: data (N x P matrix), classes (subgroups of observations), params (those used for simulating data), and g (partitioning of data into train-valid-test sets)
 #' @examples
-#' read_data("BANKNOTE",NULL,1)
-read_data = function(dataset,sim_params,sim_index){
+#' read_data(dataset = "BANKNOTE")
+#' @export
+read_data = function(dataset=c("Physionet_mean","Physionet_all","HEPMASS","POWER","GAS","IRIS","RED","WHITE","YEAST","BREAST","CONCRETE","BANKNOTE",
+                               "SIM"), ratio=c(6,2,2), g_seed = 333){
   if(grepl("Physionet",dataset)){
     library(reticulate)
     np <- import("numpy")
@@ -108,32 +189,11 @@ read_data = function(dataset,sim_params,sim_index){
     set.seed(9)
     data=data[sample(1:nrow(data),1000000,replace=F),]     # sample 1M of the 4.209M observations (ACFlow does this too)
 
-  }else if(dataset=="SPAM"){  # 4601 x 57
-    data <- read.csv(url("https://archive.ics.uci.edu/ml/machine-learning-databases/spambase/spambase.data"),header=FALSE)
-    colnames(data)=c(paste("word",c(1:48),sep=""),paste("char",c(1:6),sep=""),"capital_run_length_average",
-                     "capital_run_length_longest","capital_run_length_total","spam")
-    classes=data[,ncol(data)]
-    data=data[,-ncol(data)]    # take out class (2)
-    params=NULL
-  } else if(dataset=="IRIS"){ # 150 x 4
+  }else if(dataset=="IRIS"){ # 150 x 4
     data <- read.csv(url("http://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data"),
                      header=FALSE, col.names=c("sepal.length","sepal.width","petal.length","petal.width","species"))
     classes=data[,ncol(data)]
     data=data[,-ncol(data)]     # take out class (3)
-    params=NULL
-  } else if(dataset=="ADULT"){  # 32561 x 14
-    data <- read.csv(url("http://mlr.cs.umass.edu/ml/machine-learning-databases/adult/adult.data"),header=FALSE)
-    colnames(data)=c("age","workclass","fnlwgt","education","education-num","marital-status","occupation","relationship",
-                     "race","sex","capital-gain","capital-loss","hours-per-week","native-country",'income_class')
-    classes=data[,ncol(data)]
-    data=data[,-ncol(data)]  # take out class (2)
-    params=NULL
-  } else if(dataset=="WINE"){ # 178 x 13
-    data <- read.csv(url("https://archive.ics.uci.edu/ml/machine-learning-databases/wine/wine.data"),header=FALSE)
-    colnames(data)=c("class","Alcohol","Malic_acid","Ash","Alcalinity_of_ash","Magnesium","Total_phenols","Flavanoids",
-                     "Nonflavanoid_phenols","Proanthocyanins","Color_intensity","Hue","OD280/OD315_of_diluted_wines","Proline")
-    classes=data[,1]
-    data=data[,-1]     # take out class (3)
     params=NULL
   } else if(dataset=="RED"){ # 1599 x 12
     data <- read.csv(url("https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"),header=TRUE,sep=";")
@@ -176,92 +236,27 @@ read_data = function(dataset,sim_params,sim_index){
     classes=data[,ncol(data)]
     data=data[,-ncol(data)] # take out class (2)
     params=NULL
-  } else if(dataset=="TOYZ"){
-    ## Simulate Z
-    N=100000; D=1; P=2; seed=9*sim_index
-    set.seed(seed)
-    Z=matrix(nrow=N,ncol=D)
-    for(d in 1:D){
-      Z[,d]=rnorm(N,mean=0,sd=1)
-    }
-    W = matrix(nrow=D,ncol=P) # weights
-    B = matrix(nrow=N,ncol=P) # biases
-    for(p in 1:P){
-      W[,p]=rnorm(D,mean=0,sd=1)
-      B[,p]=rnorm(N,mean=0,sd=1)
-    }
-    X = Z%*%W + B
-    data = X
-    classes=rep(1,N)
-    params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed)
-  }else if(dataset=="TOYZ2"){
-    ## Simulate Z
-    N=100000; D=2; P=8; seed=9*sim_index
-    set.seed(seed)
-    Z=matrix(nrow=N,ncol=D)
-    for(d in 1:D){
-      Z[,d]=rnorm(N,mean=0,sd=1)
-    }
-    W = matrix(nrow=D,ncol=P) # weights
-    B = matrix(nrow=N,ncol=P) # biases
-    for(p in 1:P){
-      W[,p]=rnorm(D,mean=0,sd=1)
-      B[,p]=rnorm(N,mean=0,sd=1)
-    }
-    X = Z%*%W + B
-    data = X
-    classes=rep(1,N)
-    params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed)
-  } else if(dataset=="TOYZ_CLUSTER"){
-    N=100000; D=2; P=8; seed=9*sim_index
-    set.seed(seed)
-    classes=sample(c(1,2,3,4),N,replace=T)
-
-    Z=matrix(nrow=N,ncol=D)
-    for(d in 1:D){
-      for(c in 1:length(unique(classes))){
-        Z[classes==c,d]=rnorm(sum(classes==c),mean=0+c*3,sd=1)
-      }
-    }
-    W = matrix(nrow=D,ncol=P) # weights
-    B = matrix(nrow=N,ncol=P) # biases
-    for(p in 1:P){
-      W[,p]=rnorm(D,mean=0,sd=1)
-      B[,p]=rnorm(N,mean=0,sd=1)
-    }
-    X = Z%*%W + B
-    data = X
-    params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed)
-  } else if(dataset=="TOYZ50"){
-    ## Simulate Z
-    N=200000; D=5; P=50; seed=9*sim_index
-    set.seed(seed)
-    Z=matrix(nrow=N,ncol=D)
-    for(d in 1:D){
-      Z[,d]=rnorm(N,mean=0,sd=1)
-    }
-    W = matrix(nrow=D,ncol=P) # weights
-    B = matrix(nrow=N,ncol=P) # biases
-    for(p in 1:P){
-      W[,p]=rnorm(D,mean=0,sd=1)
-      B[,p]=rnorm(N,mean=0,sd=1)
-    }
-    X = Z%*%W + B
-    data = X
-    classes=rep(1,N)
-    params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed)
   }
-  return(list(data=data,classes=classes,params=params))
+
+  set.seed(g_seed)
+  g = split_data(data=data.frame(data), ratio=ratio)
+  return(list(data=data, classes=classes, params=params, g=g))
 }
+
+
+
+
+
+
 
 #' Simulate different mechanisms of missingness
 #'
-#' @param data Matrix of data (N x P)
+#' @param data data frame of data (N x P)
 #' @param miss_cols Columns to impose missingness on
 #' @param ref_cols Column(s) to use as covariates of missingness for MAR or MNAR. If scheme="UV" and mechanism="MAR", then each element of ref_cols is used as a covariate for each corresponding element of miss_cols (length of miss_cols must be smaller than ref_cols)
 #' @param pi Proportion of entries that are missing (for all miss_cols)
-#' @param betas Coefficients of each covariate in missingness model. Corresponding element is coef of corr element in miss_cols if MNAR, and in ref_cols if MAR (for scheme=UV)
-#' @param beta_z Coefficient of Z in missingness model, only used if fmodel="PM"
+#' @param phis Coefficients of each covariate in missingness model. Corresponding element is coef of corr element in miss_cols if MNAR, and in ref_cols if MAR (for scheme=UV)
+#' @param phi_z Coefficient of Z in missingness model, only used if fmodel="PM"
 #' @param scheme "UV" or "MV": "UV" uses one covariate in missingness model of each miss_cols element (mechanism = "MAR" uses corresponding element of ref_cols for each corresponding element of miss_cols, and mechanism = "MNAR" uses itself for miss model for each miss_cols). "MV" uses all ref_cols of each missingness model
 #' @param mechanism "MCAR", "MAR", or "MNAR" missingness. Only pertinent for fmodel="S".
 #' @param sim_index Index of simulation run: varies seed based on sim_index and column index for each element of miss_cols for reproducibility.
@@ -275,17 +270,18 @@ read_data = function(dataset,sim_params,sim_index){
 #' set.seed(111)
 #' ref_cols=sample(c(1:ncol(data)),ceiling(ncol(data)/2),replace=F); miss_cols=(1:ncol(data))[-ref_cols]
 #' simulate_missing(data, miss_cols, ref_cols, 0.5, rep(5,length(miss_cols)), NULL, "UV", "MNAR")
+#' @export
 simulate_missing = function(data,miss_cols,ref_cols,pi,
-                            betas,beta_z,
+                            phis,phi_z,
                             scheme,mechanism,sim_index=1,fmodel="S", Z=NULL){
 
   #sim_index=1 unless otherwise specified
   n=nrow(data)
   # function s.t. expected proportion of nonmissing (Missing=1) is p. let p=1-p_miss
-  find_int = function(p,beta) {
+  find_int = function(p,phi) {
     # Define a path through parameter space
     f = function(t){
-      sapply(t, function(y) mean(1 / (1 + exp(-y -x %*% beta))))
+      sapply(t, function(y) mean(1 / (1 + exp(-y -x %*% phi))))
     }
     alpha <- uniroot(function(t) f(t) - p, c(-1e6, 1e6), tol = .Machine$double.eps^0.5)$root
     return(alpha)
@@ -306,16 +302,16 @@ simulate_missing = function(data,miss_cols,ref_cols,pi,
     # specifying missingness model covariates
     if(mechanism=="MCAR"){
       x <- matrix(rep(0,n),ncol=1) # for MCAR: no covariate (same as having 0 for all samples)
-      beta=0                       # for MCAR: no effect of covariates on missingness (x is 0 so beta doesn't matter)
+      phi=0                       # for MCAR: no effect of covariates on missingness (x is 0 so phi doesn't matter)
     }else if(mechanism=="MAR"){
       if(scheme=="UV"){
         x <- matrix(data[,ref_cols[j]],ncol=1)             # missingness dep on just the corresponding ref column (randomly paired)
-        beta=betas[ref_cols[j]]
+        phi=phis[ref_cols[j]]
       }else if(scheme=="MV"){
         # check if missing column in ref. col: this would be MNAR (stop computation)
         if(any(ref_cols %in% miss_cols)){stop(sprintf("missing cols in reference. is this intended? this is MNAR not MAR."))}
         x <- matrix(data[,ref_cols],ncol=length(ref_cols)) # missingness dep on all ref columns
-        beta=betas[ref_cols]
+        phi=phis[ref_cols]
       }
     }else if(mechanism=="MNAR"){
       if(fmodel=="S"){
@@ -323,23 +319,23 @@ simulate_missing = function(data,miss_cols,ref_cols,pi,
         if(scheme=="UV"){
           # MISSINGNESS OF EACH MISS COL IS ITS OWN PREDICTOR
           x <- matrix(data[,miss_cols[j]],ncol=1) # just the corresponding ref column
-          beta=betas[miss_cols[j]]
+          phi=phis[miss_cols[j]]
         }else if(scheme=="MV"){
           # check if missing column not in ref col. this might be MAR if missingness not dep on any other missing data
           if(all(!(ref_cols %in% miss_cols))){warning(sprintf("no missing cols in reference. is this intended? this might be MAR not MNAR"))}
           x <- matrix(data[,ref_cols],ncol=length(ref_cols)) # all ref columns
-          beta=betas[ref_cols]         # in MNAR --> ref_cols can overlap with miss_cols (dependent on missingness)
+          phi=phis[ref_cols]         # in MNAR --> ref_cols can overlap with miss_cols (dependent on missingness)
 
-          # address when miss_cols/ref_cols/betas are not null (i.e. want to induce missingness on col 2 & 5 based on cols 1, 3, & 4)
+          # address when miss_cols/ref_cols/phis are not null (i.e. want to induce missingness on col 2 & 5 based on cols 1, 3, & 4)
         }
       } else if(fmodel=="PM"){
         x <- Z
-        beta = beta_z # betas should be length Z
+        phi = phi_z # phis should be length Z
       }
     }
-    alph <- sapply(pi, function(y)find_int(y,beta))
+    alph <- sapply(pi, function(y)find_int(y,phi))
     phi0s[j] = alph
-    mod = alph + x%*%beta
+    mod = alph + x%*%phi
 
     # Pr(Missing_i = 1)
     probs = inv_logit(mod)
@@ -349,9 +345,9 @@ simulate_missing = function(data,miss_cols,ref_cols,pi,
     set.seed(j+(sim_index-1)*length(miss_cols))
     Missing[,miss_cols[j]] = rbinom(n,1,probs)
 
-    params[[j]]=list(phi0=alph, phi=beta, miss=miss_cols[j], ref=ref_cols[j], scheme=scheme)
+    params[[j]]=list(phi0=alph, phi=phi, miss=miss_cols[j], ref=ref_cols[j], scheme=scheme)
   }
 
   return(list(Missing=Missing,
-              probs=prob_Missing,params=params, mechanism=mechanism,scheme=scheme, phi0s=phi0s, phis=betas, phi_z=beta_z))
+              probs=prob_Missing,params=params, mechanism=mechanism,scheme=scheme, phi0s=phi0s, phis=phis, phi_z=phi_z))
 }
