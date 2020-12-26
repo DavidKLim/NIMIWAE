@@ -40,7 +40,8 @@ tuneHyperparams = function(method="NIMIWAE", data, Missing, g,
                            MissingDatas = NULL # just for vaeac
 ){
 
-  source_python("NIMIWAE.py")  # can we do this in an R package?
+  path <- paste(system.file(package="NIMIWAE"), "inst", "NIMIWAE.py", sep="/")
+  source_python(path)  # can we do this in an R package?
   # FUN = eval(paste("run_",parse(text=method),sep="")) # change run_NIMIWAE_N16 to just run_NIMIWAE
   FUN = match.fun(paste("run_",parse(text=method),sep=""))      # this fx not found because not imported from NIMIWAE.py upon library(NIMIWAE)?
 
