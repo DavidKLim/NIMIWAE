@@ -4,6 +4,7 @@
 
 #' Hyperparameter tuning used by NIMIWAE() function
 #'
+#' @param FUN run_<> function for other methods (not NIMIWAE)
 #' @param method String specifying the method to tune hyperparameters. Can be "NIMIWAE" (default), "MIWAE", "VAEAC", "HIVAE", "MEAN", or "MF". Hyperparameters are not tuned for "MEAN" or "MF"
 #' @param data Data matrix (N x P)
 #' @param Missing Missingness mask matrix (N x P)
@@ -30,8 +31,10 @@
 #' @param MissingDatas Specify for VAEAC only.
 #' @return res object: method's fit on test set, after training on training set and validating best set of hyperparameter values using the validation set.
 #'
+#' @import reticulate
+#'
 #' @export
-tuneHyperparams = function(method="NIMIWAE", data, Missing, g,
+tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
                            rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)),
                            arch="IWAE",   # for NIMIWAE: whether each NN is optimized separately, architecture: VAE or IWAE
                            sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r=0L, bs=1000L, lr=c(0.001,0.01),
@@ -40,10 +43,13 @@ tuneHyperparams = function(method="NIMIWAE", data, Missing, g,
                            MissingDatas = NULL # just for vaeac
 ){
 
-  path <- paste(system.file(package="NIMIWAE"), "inst", "NIMIWAE.py", sep="/")
-  source_python(path)  # can we do this in an R package?
+  path <- paste(system.file(package="NIMIWAE"), "NIMIWAE.py", sep="/")
+  # print(path)
+  # print(ls())
+  reticulate::source_python(path)  # can we do this in an R package?
   # FUN = eval(paste("run_",parse(text=method),sep="")) # change run_NIMIWAE_N16 to just run_NIMIWAE
-  FUN = match.fun(paste("run_",parse(text=method),sep=""))      # this fx not found because not imported from NIMIWAE.py upon library(NIMIWAE)?
+  # FUN = match.fun(paste("run_",parse(text=method),sep=""))      # this fx not found because not imported from NIMIWAE.py upon library(NIMIWAE)?
+  if(is.null(FUN)){FUN = run_NIMIWAE}      # this fx not found because not imported from NIMIWAE.py upon library(NIMIWAE)?
 
   p = ncol(data)
 
@@ -165,7 +171,7 @@ tuneHyperparams = function(method="NIMIWAE", data, Missing, g,
 
     return(res_test)
   } else if(grepl("run_MIWAE",as.character(FUN))){
-
+    dec_distrib="Normal"
     n_combs_params=length(h)*length(bs)*length(lr)*length(dim_z)*length(niws)*length(n_epochs)*length(n_hidden_layers)
     list_train = list()
     LBs = rep(NA,n_combs_params)

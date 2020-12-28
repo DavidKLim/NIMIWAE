@@ -48,6 +48,9 @@ reverse_norm_MIWAE = function(x,norm_means,norm_sds){
 #' @return list of objects: res (original res input), results (named vector of imputation metrics), and call (user-input call to function)
 #' @examples
 #' processResults(data.file.name="Results/CONCRETE/data_MCAR_25.RData", res.file.name="Results/CONCRETE/res_NIMIWAE_MCAR_25_IWAE_rzF.RData", method="NIMIWAE")
+#'
+#' @import ggplot2
+#'
 #' @export
 processResults=function(data=NULL, Missing=NULL, g=NULL, res=NULL,
                         data.file.name="", res.file.name="", method=c("MIWAE","NIMIWAE","HIVAE","VAEAC","MEAN","MF")){
