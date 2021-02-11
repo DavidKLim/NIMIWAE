@@ -43,7 +43,6 @@ NIMIWAE = function(data, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, 
   datas = split(data.frame(data), g)        # split by $train, $test, and $valid
   Missings = split(data.frame(Missing), g)
   #probs_Missing = split(data.frame(prob_Missing),g)
-  phi0=fit_Missing$params[[1]]$phi0; phi=fit_Missing$params[[1]]$phi
 
   norm_means=colMeans(datas$train); norm_sds=apply(datas$train,2,sd)    # calculate normalization mean/sd on training set --> use for all
 

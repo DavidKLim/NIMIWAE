@@ -97,8 +97,7 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(6,2,2),
 #' @importFrom lubridate hms hour minute
 #'
 #' @export
-read_data = function(dataset=c("Physionet_mean","Physionet_all","HEPMASS","POWER","GAS","IRIS","RED","WHITE","YEAST","BREAST","CONCRETE","BANKNOTE",
-                               "SIM"), ratio=c(6,2,2), g_seed = 333){
+read_data = function(dataset=c("Physionet_mean","Physionet_all","HEPMASS","POWER","GAS","IRIS","RED","WHITE","YEAST","BREAST","CONCRETE","BANKNOTE"), ratio=c(6,2,2), g_seed = 333){
   if(grepl("Physionet",dataset)){
     np <- reticulate::import("numpy")
     npz1 <- np$load("data/PhysioNet2012/physionet.npz")
