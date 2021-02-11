@@ -16,7 +16,7 @@ NIMIWAE(
   covars_r = rep(1, ncol(data)),
   arch = "IWAE",
   hyperparameters = list(sigma = "elu", h = c(128L, 64L), n_hidden_layers = c(1L, 2L),
-    n_hidden_layers_r = 0L, bs = c(10000L, 5000L), lr = c(0.001, 0.01), dim_z =
+    n_hidden_layers_r = 0L, bs = c(1000L), lr = c(0.001, 0.01), dim_z =
     as.integer(c(floor(ncol(data)/2), floor(ncol(data)/4))), niw = 5L, n_epochs = 2002L)
 )
 }
@@ -58,4 +58,11 @@ fit_Missing = simulate_missing(data, miss_cols, ref_cols, pi=0.5, phis, NULL, "U
 data=fit_data$data; Missing=fit_Missing$Missing; g=fit_data$g
 res=NIMIWAE(data, Missing, g)    # using default hyperparameters grid
 imp_metrics = processResults(data=data, Missing=Missing, g=g, res=res)
+
+}
+\references{
+\url{https://github.com/DavidKLim/NIMIWAE}
+}
+\author{
+David K. Lim, \email{deelim@live.unc.edu}
 }

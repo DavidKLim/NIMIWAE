@@ -49,6 +49,9 @@ reverse_norm_MIWAE = function(x,norm_means,norm_sds){
 #' @examples
 #' processResults(data.file.name="Results/CONCRETE/data_MCAR_25.RData", res.file.name="Results/CONCRETE/res_NIMIWAE_MCAR_25_IWAE_rzF.RData", method="NIMIWAE")
 #'
+#' @author David K. Lim, \email{deelim@live.unc.edu}
+#' @references \url{https://github.com/DavidKLim/NIMIWAE}
+#'
 #' @import ggplot2
 #'
 #' @export

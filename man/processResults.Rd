@@ -37,4 +37,11 @@ Process results: return imputation metrics
 }
 \examples{
 processResults(data.file.name="Results/CONCRETE/data_MCAR_25.RData", res.file.name="Results/CONCRETE/res_NIMIWAE_MCAR_25_IWAE_rzF.RData", method="NIMIWAE")
+
+}
+\references{
+\url{https://github.com/DavidKLim/NIMIWAE}
+}
+\author{
+David K. Lim, \email{deelim@live.unc.edu}
 }

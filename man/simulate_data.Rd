@@ -15,6 +15,16 @@ simulate_data(
 )
 }
 \arguments{
+\item{N}{Number of observations}
+
+\item{D}{Dimension of latent Z}
+
+\item{P}{Number of features}
+
+\item{sim_index}{Integer index for sim. Can use to set seed}
+
+\item{seed}{Seed. Either set custom or set some value x sim_index. Default: 9 x sim_index}
+
 \item{ratio}{Train-valid-test ratio for splitting of observations}
 
 \item{g_seed}{Seed for train-valid-test dataset splitting of observations}
@@ -27,4 +37,11 @@ Simulate data
 }
 \examples{
 simulate_data(N = 10000, D = 2, P = 8, sim_index = 1)
+
+}
+\references{
+\url{https://github.com/DavidKLim/NIMIWAE}
+}
+\author{
+David K. Lim, \email{deelim@live.unc.edu}
 }

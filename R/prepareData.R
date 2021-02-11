@@ -12,19 +12,22 @@ split_data = function(data, ratio=c(6,2,2), seed=333){
   return(g)
 }
 
-###### NEED TO CREATE simulate_data() function: called from read_data, and input simulation parameters #####
 #' Simulate data
 #'
-#' @param N
-#' @param D
-#' @param P
-#' @param sim_index
-#' @param seed
+#' @param N Number of observations
+#' @param D Dimension of latent Z
+#' @param P Number of features
+#' @param sim_index Integer index for sim. Can use to set seed
+#' @param seed Seed. Either set custom or set some value x sim_index. Default: 9 x sim_index
 #' @param ratio Train-valid-test ratio for splitting of observations
 #' @param g_seed Seed for train-valid-test dataset splitting of observations
 #' @return list of objects: data (N x P matrix), classes (subgroups of observations), params (those used for simulating data), and g (partitioning of data into train-valid-test sets)
 #' @examples
 #' simulate_data(N = 10000, D = 2, P = 8, sim_index = 1)
+#'
+#' @author David K. Lim, \email{deelim@live.unc.edu}
+#' @references \url{https://github.com/DavidKLim/NIMIWAE}
+#'
 #' @export
 simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(6,2,2), g_seed = 333){
   # simulate data by simulating D-dimensional Z latent variable for N observations
@@ -85,12 +88,19 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(6,2,2),
 #' @return list of objects: data (N x P matrix), classes (subgroups of observations), params (those used for simulating data), and g (partitioning of data into train-valid-test sets)
 #' @examples
 #' read_data(dataset = "BANKNOTE")
+#'
+#' @author David K. Lim, \email{deelim@live.unc.edu}
+#' @references \url{https://github.com/DavidKLim/NIMIWAE}
+#'
+#' @importFrom gdata read.xls
+#' @importFrom reticulate import
+#' @importFrom lubridate hms hour minute
+#'
 #' @export
 read_data = function(dataset=c("Physionet_mean","Physionet_all","HEPMASS","POWER","GAS","IRIS","RED","WHITE","YEAST","BREAST","CONCRETE","BANKNOTE",
                                "SIM"), ratio=c(6,2,2), g_seed = 333){
   if(grepl("Physionet",dataset)){
-    library(reticulate)
-    np <- import("numpy")
+    np <- reticulate::import("numpy")
     npz1 <- np$load("data/PhysioNet2012/physionet.npz")
     classes=c(npz1$f$y_train, npz1$f$y_val, npz1$f$y_test)
     params=NULL
@@ -144,12 +154,11 @@ read_data = function(dataset=c("Physionet_mean","Physionet_all","HEPMASS","POWER
     data = (data - colMeans(data)) / apply(data,2,sd)   # normalize
     params=NULL
   }else if(dataset=="POWER"){ # 2.05M --> 1M x 6
-    library(lubridate)
     f1 = sprintf("./Results/%s/household_power_consumption.zip",dataset)
     if(!file.exists(f1)){download.file("https://archive.ics.uci.edu/ml/machine-learning-databases/00235/household_power_consumption.zip",destfile=f1)}
     data <- read.csv(unz(f1, "household_power_consumption.txt"),header=T,sep=";")
     data=data[,-1]; data=data[,-3]; data=data[,-4]    # following https://github.com/gpapamak/maf/blob/master/datasets/power.py . They get rid of Date, Global reactive power, and Global Intensity
-    time_res = hms(data[,1]); data[,1] = 60*hour(time_res) + minute(time_res)
+    time_res = lubridate::hms(data[,1]); data[,1] = 60*lubridate::hour(time_res) + lubridate::minute(time_res)
 
     for(j in 2:5){ data[,j] = as.numeric(data[,j]) }
     data = data[!is.na(rowSums(data)),]
@@ -226,8 +235,7 @@ read_data = function(dataset=c("Physionet_mean","Physionet_all","HEPMASS","POWER
     data=data[,-ncol(data)] # take out class (10)
     params=NULL
   } else if(dataset=="CONCRETE"){ # 1030 x 8
-    require(RCurl);require(gdata)
-    data <- read.xls("http://archive.ics.uci.edu/ml/machine-learning-databases/concrete/compressive/Concrete_Data.xls")
+    data <- gdata::read.xls("http://archive.ics.uci.edu/ml/machine-learning-databases/concrete/compressive/Concrete_Data.xls")
     classes=data[,ncol(data)]
     data=data[,-ncol(data)] # take out class: here it's continuous
     params=NULL

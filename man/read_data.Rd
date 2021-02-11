@@ -26,4 +26,11 @@ Read UCI or Physionet 2012 Challenge Data
 }
 \examples{
 read_data(dataset = "BANKNOTE")
+
+}
+\references{
+\url{https://github.com/DavidKLim/NIMIWAE}
+}
+\author{
+David K. Lim, \email{deelim@live.unc.edu}
 }

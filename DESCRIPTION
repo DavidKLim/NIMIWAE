@@ -2,8 +2,12 @@ Package: NIMIWAE
 Type: Package
 Title: Non-Ignorably Missing Importance Weighted Autoencoder
 Version: 0.1.0
-Author: David Lim
-Maintainer: David Lim <deelim@email.unc.edu>
+Authors@R: 
+    person(given = "David",
+           family = "Lim",
+           role = c("aut", "cre"),
+           email = "deelim@live.unc.edu",
+           comment = c(ORCID = "https://orcid.org/0000-0001-6403-4849"))
 Description: Unify statisticaly theory and deep learning methods to properly impute missing not at random (MNAR) data using deeply-learned importance weighted autoencoders. Additionally can impute data that are missing at random (MAR) or missing completely at random (MCAR)
 Config/reticulate:
   list(

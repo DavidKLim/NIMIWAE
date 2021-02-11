@@ -27,7 +27,10 @@
 #' res=NIMIWAE(data, Missing, g)    # using default hyperparameters grid
 #' imp_metrics = processResults(data=data, Missing=Missing, g=g, res=res)
 #'
-#' @import reticulate
+#' @author David K. Lim, \email{deelim@live.unc.edu}
+#' @references \url{https://github.com/DavidKLim/NIMIWAE}
+#'
+#' @importFrom reticulate source_python
 #'
 #' @export
 NIMIWAE = function(data, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE",
@@ -44,7 +47,7 @@ NIMIWAE = function(data, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, 
 
   norm_means=colMeans(datas$train); norm_sds=apply(datas$train,2,sd)    # calculate normalization mean/sd on training set --> use for all
 
-  source_python(system.file("NIMIWAE.py", package = "NIMIWAE"))
+  reticulate::source_python(system.file("NIMIWAE.py", package = "NIMIWAE"))
 
   res = do.call(NIMIWAE::tuneHyperparams, c(list(method="NIMIWAE",data=data,Missing=Missing,g=g,
                                             rdeponz=rdeponz, learn_r=learn_r,

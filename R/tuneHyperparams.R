@@ -31,7 +31,10 @@
 #' @param MissingDatas Specify for VAEAC only.
 #' @return res object: method's fit on test set, after training on training set and validating best set of hyperparameter values using the validation set.
 #'
-#' @import reticulate
+#' @author David K. Lim, \email{deelim@live.unc.edu}
+#' @references \url{https://github.com/DavidKLim/NIMIWAE}
+#'
+#' @importFrom reticulate source_python import
 #'
 #' @export
 tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
@@ -59,8 +62,8 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
   norm_means=colMeans(datas$train); norm_sds=apply(datas$train,2,sd)
   test_epochs=2L
 
-  torch = import("torch")
-  np = import("numpy")
+  torch = reticulate::import("torch")
+  np = reticulate::import("numpy")
 
   if(grepl("run_NIMIWAE",as.character(FUN))){
     if(learn_r){phi0=NULL; phi=NULL}else{phi=np$array(phi)}

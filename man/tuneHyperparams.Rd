@@ -5,7 +5,9 @@
 \title{Hyperparameter tuning used by NIMIWAE() function}
 \usage{
 tuneHyperparams(
+  FUN = NULL,
   method = "NIMIWAE",
+  dataset,
   data,
   Missing,
   g,
@@ -22,7 +24,7 @@ tuneHyperparams(
   n_hidden_layers_r = 0L,
   bs = 1000L,
   lr = c(0.001, 0.01),
-  dim_z = as.integer(c(floor(p/2), floor(p/4))),
+  dim_z = as.integer(c(floor(ncol(data)/2), floor(ncol(data)/4))),
   niws = 5L,
   n_epochs = 2002L,
   data_types = NULL,
@@ -32,6 +34,8 @@ tuneHyperparams(
 )
 }
 \arguments{
+\item{FUN}{run_<> function for other methods (not NIMIWAE)}
+
 \item{method}{String specifying the method to tune hyperparameters. Can be "NIMIWAE" (default), "MIWAE", "VAEAC", "HIVAE", "MEAN", or "MF". Hyperparameters are not tuned for "MEAN" or "MF"}
 
 \item{data}{Data matrix (N x P)}
@@ -85,4 +89,10 @@ res object: method's fit on test set, after training on training set and validat
 }
 \description{
 Hyperparameter tuning used by NIMIWAE() function
+}
+\references{
+\url{https://github.com/DavidKLim/NIMIWAE}
+}
+\author{
+David K. Lim, \email{deelim@live.unc.edu}
 }
