@@ -7,12 +7,14 @@
 #' @param FUN run_<> function for other methods (not NIMIWAE)
 #' @param method String specifying the method to tune hyperparameters. Can be "NIMIWAE" (default), "MIWAE", "VAEAC", "HIVAE", "MEAN", or "MF". Hyperparameters are not tuned for "MEAN" or "MF"
 #' @param data Data matrix (N x P)
+#' @param data_types vector of length=ncol(data). Valid values: "real", "count", "cat" or "pos"
 #' @param Missing Missingness mask matrix (N x P)
 #' @param g Training-validation-test split partitioning
 #' @param rdeponz TRUE/FALSE: Whether to allow missingness (r) to depend on the latent variable (z). Default is FALSE
 #' @param learn_r TRUE/FALSE: Whether to learn missingness model via appended NN (TRUE, default), or fit a known logistic regression model (FALSE). If FALSE, `phi0` and `phi` must be specified
 #' @param phi0 (optional) Intercept of logistic regression model, if learn_r = FALSE.
 #' @param phi (optional) Vector of coefficients of logistic regression model for each input covariates `covars_r`, if learn_r = FALSE. `phi` must be the same length as the number of input covariates, or `sum(covars_r)`.
+#' @param Cs (optional) # factors for categorical variables. Must be of length = # of categorical variables.
 #' @param ignorable TRUE/FALSE: Whether missingness is ignorable (MCAR/MAR) or nonignorable (MNAR, default). If missingness is known to be ignorable, "ignorable=T" omits missingness model.
 #' @param covars_r Vector of 1's and 0's of whether each feature is included as covariates in the missingness model. Need not be specified if `ignorable = T`. Default is using all features as covariates in missingness model. Must be length P (or `ncol(data)`)
 #' @param arch Architecture of NIMIWAE. Can be "IWAE" or "VAE". "VAE" is specific case of the "IWAE" where only one sample is drawn from the joint posterior of (z, xm).
@@ -25,7 +27,7 @@
 #' @param dim_z integer, dimensionality of latent z. Default: 5
 #' @param niw integer, number of importance weights (samples drawn from each latent space). Default: 5
 #' @param n_epoch integer, maximum number of epochs (without early stop). Default: 2002
-#' @param data_types Specify for HIVAE only.
+#' @param data_types_HIVAE Specify for HIVAE only.
 #' @param one_hot_max_sizes Specify for VAEAC only.
 #' @param ohms Specify for VAEAC only.
 #' @param MissingDatas Specify for VAEAC only.
@@ -37,12 +39,12 @@
 #' @importFrom reticulate source_python import
 #'
 #' @export
-tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
-                           rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)),
+tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,data_types_0, Missing, g,
+                           rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, Cs, ignorable=F, covars_r=rep(1,ncol(data)),
                            arch="IWAE",   # for NIMIWAE: whether each NN is optimized separately, architecture: VAE or IWAE
                            sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r=0L, bs=1000L, lr=c(0.001,0.01),
                            dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))), niws=5L, n_epochs=2002L,
-                           data_types=NULL, one_hot_max_sizes=NULL, ohms=NULL,
+                           data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
                            MissingDatas = NULL # just for vaeac
 ){
 
@@ -60,6 +62,9 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
   Missings = split(data.frame(Missing), g)
   # probs_Missing = split(data.frame(prob_Missing),g)
   norm_means=colMeans(datas$train); norm_sds=apply(datas$train,2,sd)
+
+  norm_means[data_types=="cat"] = 0; norm_sds[data_types=="cat"] = 1
+
   test_epochs=2L
 
   torch = reticulate::import("torch")
@@ -69,13 +74,13 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
     if(learn_r){phi0=NULL; phi=NULL}else{phi=np$array(phi)}
     list_train = list()
 
-    include_xo=TRUE; betaVAE = F; dec_distrib="Normal"    # code this out of run_NIMIWAE python function?
     #partial_opt=FALSE; nits=1L; nGibbs=0L; input_r="r"
-    add_miss_term = F; draw_xobs=F; draw_xmiss=T; pre_impute_value=0L
+    pre_impute_value=0L
+    # add_miss_term = F; draw_xobs=F; draw_xmiss=T    # deprecated
 
-    betaVAE=F # default: no beta-VAE (need to remove from python, or can keep this option?)
-    if(betaVAE){ beta=0; beta_anneal_rate=1/500
-    }else{ beta=1; beta_anneal_rate=0 }
+    # betaVAE=F # default: no beta-VAE (need to remove from python, or can keep this option?)
+    # if(betaVAE){ beta=0; beta_anneal_rate=1/500
+    # }else{ beta=1; beta_anneal_rate=0 }
 
     if(arch=="VAE"){ niws=1L }
     #M=1L
@@ -90,9 +95,9 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
     # dim_zs = c(64L,128L)    # D6: way overparametrized Z
 
     n_combs_params=length(h)*length(bs)*length(lr)*length(dim_z)*length(niws)*length(n_epochs)*length(n_hidden_layers)*length(n_hidden_layers_r)*length(L1_weights)
-    LBs_trainVal = matrix(NA,nrow=n_combs_params,ncol=8+4)   # contain params, trainMSE,valMSE,trainLB,valLB
+    LBs_trainVal = matrix(NA,nrow=n_combs_params,ncol=8+2)   # contain params, trainMSE,valMSE,trainLB,valLB
     colnames(LBs_trainVal) = c("h","bs","lr","dim_z","niw","n_epoch","n_hidden_layers","L1_weights",
-                               "LB_train","MSE_train","LB_valid","MSE_valid")
+                               "LB_train","LB_valid")
     index=1
     for(i in 1:length(h)){for(j in 1:length(bs)){for(k in 1:length(lr)){for(l in 1:length(dim_z)){
       for(m in 1:length(niws)){for(mm in 1:length(n_epochs)){for(nn in 1:length(n_hidden_layers)){for(oo in 1:length(L1_weights)){        # h1: encoder     q(z|xo (,r))
@@ -105,24 +110,26 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
 
         if(oo==1){warm_started_model = NULL; warm_start=F}else{warm_started_model = res_train$'saved_model'; warm_start=T}
         # fix h3=0: Logistic Regression for p(r|x)
-        res_train = FUN(rdeponz=rdeponz, data=np$array(datas$train),data_val=np$array(datas$valid),Missing=np$array(Missings$train),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$train),
-                        covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r,
-                        ignorable=ignorable,n_hidden_layers=n_hidden_layers[nn], n_hidden_layers_r=0L,
-                        L1_weight=L1_weights[oo],L2_weight=L2_weight,unnorm=F,sparse=sparse,dropout_pct=dropout_pct,prune_pct=NULL,covars_miss=NULL,covars_miss_val=NULL,impute_bs=impute_bs,include_xo=include_xo,
+        n_hidden_layers_r = n_hidden_layers[nn]   # eventually will change to this. Fix 0L case first
+        # n_hidden_layers_r = 0L
+        res_train = FUN(rdeponz=rdeponz, data=np$array(datas$train),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$train),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$train),
+                        covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
+                        ignorable=ignorable,n_hidden_layers=n_hidden_layers[nn], n_hidden_layers_r=n_hidden_layers_r,
+                        L1_weight=L1_weights[oo],L2_weight=L2_weight,sparse=sparse,dropout_pct=dropout_pct,prune_pct=NULL,covars_miss=NULL,covars_miss_val=NULL,impute_bs=impute_bs,
                         arch=arch,
-                        add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
-                        pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=0,h4=h[i],beta=beta,beta_anneal_rate=beta_anneal_rate,
-                        phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, dec_distrib=dec_distrib, train=1L,
+                        #add_miss_term=add_miss_term,#draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
+                        pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=beta,beta_anneal_rate=beta_anneal_rate,
+                        phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, train=1L,
                         sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=niws[m])
 
-        res_valid = FUN(rdeponz=rdeponz, data=np$array(datas$valid),data_val=np$array(datas$valid),Missing=np$array(Missings$valid),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$valid),
-                        covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r,
-                        ignorable=ignorable,n_hidden_layers=n_hidden_layers[nn], n_hidden_layers_r=0L,
-                        L1_weight=L1_weights[oo],L2_weight=L2_weight,unnorm=F,sparse=sparse,dropout_pct=dropout_pct,prune_pct=NULL,covars_miss=NULL,covars_miss_val=NULL,impute_bs=impute_bs,include_xo=include_xo,
+        res_valid = FUN(rdeponz=rdeponz, data=np$array(datas$valid),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$valid),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$valid),
+                        covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
+                        ignorable=ignorable,n_hidden_layers=n_hidden_layers[nn], n_hidden_layers_r=n_hidden_layers_r,
+                        L1_weight=L1_weights[oo],L2_weight=L2_weight,sparse=sparse,dropout_pct=dropout_pct,prune_pct=NULL,covars_miss=NULL,covars_miss_val=NULL,impute_bs=impute_bs,
                         arch=arch,
-                        add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
-                        pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=0,h4=h[i],beta=1,beta_anneal_rate=0,
-                        phi0=phi0, phi=phi, warm_start=F, saved_model=res_train$'saved_model', dec_distrib=dec_distrib, train=0L,
+                        #add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
+                        pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=1,beta_anneal_rate=0,
+                        phi0=phi0, phi=phi, warm_start=F, saved_model=res_train$'saved_model', train=0L,
                         sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=niws[m])
         #list_train[[index]] = res_train
         #LBs[index]=res_valid$'LB'
@@ -155,14 +162,14 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
     saved_model = torch$load("temp_opt_train_saved_model.pth")
 
     opt_params = opt_train$'train_params' #; saved_model = opt_train$'saved_model'
-    res_test = FUN(rdeponz=rdeponz, data=np$array(datas$test),data_val=np$array(datas$valid),Missing=np$array(Missings$test),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$test),
-                   covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r,
+    res_test = FUN(rdeponz=rdeponz, data=np$array(datas$test),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$test),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$test),
+                   covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
                    L1_weight=opt_train$'L1_weight',L2_weight=L2_weight, ignorable=ignorable, n_hidden_layers=opt_params$'n_hidden_layers', n_hidden_layers_r=opt_params$'n_hidden_layers_r',
-                   unnorm=F,sparse=sparse, dropout_pct=dropout_pct,prune_pct=NULL,covars_miss=NULL,covars_miss_val=NULL,impute_bs=opt_params$'bs',include_xo=include_xo,
+                   sparse=sparse, dropout_pct=dropout_pct,prune_pct=NULL,covars_miss=NULL,covars_miss_val=NULL,impute_bs=opt_params$'bs',
                    arch=arch,
-                   add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
-                   pre_impute_value=pre_impute_value,h1=opt_params$'h1',h2=opt_params$'h2',h3=opt_params$'h3',h4=opt_params$'h4',beta=1,beta_anneal_rate=0,
-                   phi0=phi0, phi=phi, warm_start=F, saved_model=saved_model, dec_distrib=dec_distrib, train=0L,
+                   #add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
+                   pre_impute_value=pre_impute_value,h1=opt_params$'h1',h2=opt_params$'h2',h3=opt_params$'h3',h4=opt_params$'h4',#beta=1,beta_anneal_rate=0,
+                   phi0=phi0, phi=phi, warm_start=F, saved_model=saved_model, train=0L,
                    sigma=opt_params$'sigma',bs = opt_params$'bs', n_epochs = test_epochs,lr=opt_params$'lr',niw=opt_params$'niw',dim_z=opt_params$'dim_z',L=opt_params$'L', M=opt_params$'M')
 
     res_test$opt_params=opt_params
@@ -250,11 +257,11 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data, Missing, g,
       for(mm in 1:length(n_epochs)){for(yy in 1:length(dim_latent_y)){
         print(paste("h:",h[i],", bs:",bs[j],", lr:",lr[k],", dim_z:",dim_z[l],", n_epochs: ",n_epochs[mm], ", dim_latent_y: ", dim_latent_y[yy],sep=""))
         save_file = sprintf("HIVAE_interm_%f_%d_%d_%d_%d_%d_%s",lr[k],bs[j],n_epochs[mm],dim_latent_s,dim_z[l],dim_latent_y[yy],model_name)
-        res_train = FUN(data=np$array(datas$train),Missing=np$array(Missings$train),data_types=data_types,
+        res_train = FUN(data=np$array(datas$train),Missing=np$array(Missings$train),data_types_HIVAE=data_types_HIVAE,
                         lr=lr[k],bs=bs[j],n_epochs=n_epochs[mm],train=1L,
                         display=100L, n_save=1000L, restore=0L, dim_latent_s=dim_latent_s, dim_latent_z=dim_z[l],
                         dim_latent_y=dim_latent_y[yy], model_name=model_name,save_file=save_file)
-        res_valid = FUN(data=np$array(datas$valid),Missing=np$array(Missings$valid),data_types=data_types,
+        res_valid = FUN(data=np$array(datas$valid),Missing=np$array(Missings$valid),data_types_HIVAE=data_types_HIVAE,
                         lr=lr[k],bs=10000000L,n_epochs=1L,train=0L,
                         display=100L, n_save=1000L, restore=1L, dim_latent_s=dim_latent_s, dim_latent_z=dim_z[l],
                         dim_latent_y=dim_latent_y[yy], model_name=model_name,save_file=save_file)

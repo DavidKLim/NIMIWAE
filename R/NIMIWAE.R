@@ -6,6 +6,7 @@
 #' Process results: return imputation metrics
 #'
 #' @param data Data matrix (N x P)
+#' @param data_types Vector of data types ("real", "count", "pos", "cat")
 #' @param Missing Missingness mask matrix (N x P)
 #' @param g Training-validation-test split partitioning
 #' @param rdeponz TRUE/FALSE: Whether to allow missingness (r) to depend on the latent variable (z). Default is FALSE
@@ -30,29 +31,67 @@
 #' @author David K. Lim, \email{deelim@live.unc.edu}
 #' @references \url{https://github.com/DavidKLim/NIMIWAE}
 #'
-#' @importFrom reticulate source_python
+#' @importFrom reticulate source_python import
 #'
 #' @export
-NIMIWAE = function(data, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE",
+NIMIWAE = function(data, data_types, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE",
                    hyperparameters=list(sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r=0L,
                                         bs=c(1000L), lr=c(0.001,0.01), dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))),
                                         niw=5L, n_epochs=2002L)
                    ){
-  # 1) get rid of betaVAE
-  # 2) set up g= ... splits in this function
-  datas = split(data.frame(data), g)        # split by $train, $test, and $valid
-  Missings = split(data.frame(Missing), g)
-  #probs_Missing = split(data.frame(prob_Missing),g)
 
-  norm_means=colMeans(datas$train); norm_sds=apply(datas$train,2,sd)    # calculate normalization mean/sd on training set --> use for all
+  #############################################################################################################
+  ############ DEFINE Cs, and create X_aug (split categorical values to dummy variables of 1/0) ###############
+  #############################################################################################################
+
+  np = reticulate::import("numpy")
+
+  data_types_0 = data_types
+
+  N = nrow(data); P=ncol(data)
+  if(sum(data_types=="cat")==0){
+    # if no categorical variables
+    data_aug = data
+    Missing_aug = Missing
+    covars_r_aug = covars_r
+    Cs = np$empty(shape=c(0L,0L))
+    data_types_aug = data_types
+  } else{
+    data_aug = data[, data_types != "cat"]
+    Missing_aug = Missing[, data_types != "cat"]
+    covars_r_aug = covars_r[data_types != "cat"]
+    # if any categorical variables --> need to dummy encode
+    Cs = rep(0, sum(data_types=="cat"))
+    cat_ids = which(data_types=="cat")
+    for(i in 1:length(cat_ids)){
+      data_cat = as.numeric(as.factor(data[,cat_ids[i]]))-1
+      Cs[i] = length(unique(data_cat))
+      data_cat_onehot = matrix(ncol=Cs[i], nrow=length(data_cat))
+      for(ii in 1:Cs[i]){
+        data_cat_onehot[,ii] = (data_cat==ii-1)^2
+      }
+      data_aug = cbind(data_aug, data_cat_onehot)
+      Missing_aug = cbind(Missing_aug, matrix(Missing[,cat_ids[i]], nrow=N, ncol=Cs[i]))
+      covars_r_aug = c(covars_r_aug, rep(covars_r[data_types=="cat"][i],Cs[i]))
+    }
+    data_types_aug = c( data_types[!(data_types %in% c("cat"))], rep("cat",sum(Cs)) )
+  }
+
+  # 2) set up g= ... splits in this function
+  # datas = split(data.frame(data), g)        # split by $train, $test, and $valid
+  # Missings = split(data.frame(Missing), g)
+  datas = split(data.frame(data_aug), g)        # split by $train, $test, and $valid
+  Missings = split(data.frame(Missing_aug), g)
+
+  # norm_means=colMeans(datas$train); norm_sds=apply(datas$train,2,sd)    # calculate normalization mean/sd on training set --> use for all
 
   reticulate::source_python(system.file("NIMIWAE.py", package = "NIMIWAE"))
 
-  res = do.call(NIMIWAE::tuneHyperparams, c(list(method="NIMIWAE",data=data,Missing=Missing,g=g,
+  res = do.call(NIMIWAE::tuneHyperparams, c(list(method="NIMIWAE",data=data_aug,data_types=data_types_aug, data_types_0=data_types_0,Missing=Missing_aug,g=g,
                                             rdeponz=rdeponz, learn_r=learn_r,
                                             phi0=phi0,phi=phi,
-                                            covars_r=covars_r,
-                                            arch=arch, ignorable=ignorable), hyperparameters))
+                                            covars_r=covars_r_aug,
+                                            arch=arch, Cs=Cs, ignorable=ignorable), hyperparameters))
   # res = tuneHyperparams(method="NIMIWAE",data=data,Missing=Missing,g=g,
   #                                rdeponz=rdeponz, learn_r=learn_r,
   #                                phi0=phi0,phi=phi,
