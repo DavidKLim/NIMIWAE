@@ -1,6 +1,6 @@
 
 # sparsity = "prune" (turned off), "dropout" or "none"
-def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_val,covars_r,norm_means,norm_sds,learn_r,Cs,ignorable=False,n_hidden_layers=2,n_hidden_layers_r=0,L1_weight=0,L2_weight=0,sparse="none",dropout_pct=None,prune_pct=None,covars_miss=None,covars_miss_val=None,impute_bs=None,arch="IWAE",pre_impute_value=0,h1=64,h2=None,h3=None,h4=None,phi0=None,phi=None,train=1,warm_start=False,saved_model=None,early_stop=False,sigma="relu",bs = 64,n_epochs = 2002,lr=0.001,niw=20,dim_z=5,L=20,M=20,trace=False):
+def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_val,covars_r,norm_means,norm_sds,learn_r,Cs,ignorable=False,n_hidden_layers=2,n_hidden_layers_r=0,L1_weight=0,L2_weight=0,sparse="none",dropout_pct=None,prune_pct=None,covars_miss=None,covars_miss_val=None,impute_bs=None,arch="IWAE",draw_xmiss=False,pre_impute_value=0,h1=64,h2=None,h3=None,h4=None,phi0=None,phi=None,train=1,warm_start=False,saved_model=None,early_stop=False,sigma="relu",bs = 64,n_epochs = 2002,lr=0.001,niw=20,dim_z=5,L=20,M=20,trace=False):
   # add_miss_term = True --> adds p(x^m) term into loss function --> reconstruction of msising values
   ## only applicable when true data input --> essentially improves x^m reconstruction directly as if no missing data
   # rdeponz : True or False --> if True, then q(z|x^o) -> q(z|x^o,r) and p(r|x) -> p(r|x,z)
@@ -49,14 +49,14 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   temp0 = torch.ones([1], dtype=torch.float64, device='cuda:0')
   temp = torch.ones([1], dtype=torch.float64, device='cuda:0')
   # temp_min = torch.tensor(0.5,device="cuda:0",dtype=torch.float64)
-  # ANNEAL_RATE = torch.tensor(0.0006,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
+  temp_min = torch.tensor(0.001,device="cuda:0",dtype=torch.float64)
+  ANNEAL_RATE = torch.tensor(0.001,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
   # ANNEAL_RATE = torch.tensor(0.00003,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
   
   # temp = temp_min; temp0 = temp_min
   # ANNEAL_RATE = torch.tensor(0,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
   
-  temp_min = torch.tensor(0.001,device="cuda:0",dtype=torch.float64)
-  ANNEAL_RATE = torch.tensor(0.01,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
+  # ANNEAL_RATE = torch.tensor(0.01,device="cuda:0",dtype=torch.float64)  # HIVAE (linear annealing)
 
   
   ids_real = data_types=='real'; p_real=np.sum(ids_real)
@@ -223,9 +223,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   def forward(niw, iota_xfull, iota_x, mask, batch_size, tiledmask, tiled_iota_x, tiled_iota_xfull, tiled_tiled_covars_miss, temp):
     tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
     tiled_tiled_iota_x = torch.Tensor.repeat(tiled_iota_x,[M,1]).cuda()
-    # if add_miss_term or not draw_xmiss:tiled_tiled_iota_xfull = torch.Tensor.repeat(tiled_iota_xfull,[M,1]).cuda()
-    # else: tiled_tiled_iota_xfull = None
-    tiled_tiled_iota_xfull = None
+    if not draw_xmiss: tiled_tiled_iota_xfull = torch.Tensor.repeat(tiled_iota_xfull,[M,1]).cuda()
+    else: tiled_tiled_iota_xfull = None
+    # tiled_tiled_iota_xfull = None
     ## ENCODER ##
     if rdeponz:       # encoder input just Xo, R if rdeponz=T?
       out_encoder = encoder(torch.cat([iota_x,mask],1))
@@ -317,45 +317,48 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       
       
       # if draw_xmiss, draw missing values from q(xm|...)
-      # print(ids_real)
-      # print(q_xs['real'].rsample([M]).shape)
-      if exists_types[0]: xm_flat[:,ids_real] = q_xs['real'].rsample([M]).reshape([M*niw*batch_size,-1])
-      if exists_types[1]: xm_flat[:,ids_count] = q_xs['count'].rsample([M]).reshape([M*niw*batch_size,-1])
-      if exists_types[2]: xm_flat[:,ids_pos] = q_xs['pos'].rsample([M]).reshape([M*niw*batch_size,-1])
-      if exists_types[3]:
-        for ii in range(0,p_cat):
-          if ii==0: C0=0; C1=int(Cs[ii])
-          else: C0=C1; C1=C0+int(Cs[ii])
-          # xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = q_xs['cat'][ii].rsample([M]).reshape([M*niw*batch_size,-1])
-          xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1]).reshape([M*niw*batch_size,-1])  # just passing softmax probs
-          # print("out_encoders_xr[cat][" + str(ii) + "][:(" + str(M+1) + ")]")
-          # print(out_encoders_xr['cat'][ii][:(M+1)])
-          # print("repeated out_encoders_xr")
-          # print(torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1])[:(M+1)])
-          # # print("reshaped repeated out_encoders_xr")
-          # # print(torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1]).reshape([M*niw*batch_size,-1])[:(M+1)])  # same
-          # print("log px")
-          # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).shape)
-          # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])))
-          # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).reshape([M*niw*batch_size]))
-          # print("log qx")
-          # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).shape)
-          # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])))
-          # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).reshape([M*niw*batch_size]))
-          # print("(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])")
-          # print((1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)]))
-
-      #     print("feature " + str(p_real+p_count+p_pos+C0))
-      #     print(xm_flat[:, (p_real+p_count+p_pos+C0)])
-      #     print("feature " + str(p_real+p_count+p_pos+C0+1))
-      #     print(xm_flat[:, (p_real+p_count+p_pos+C0+1)])
-      #     print("feature " + str(p_real+p_count+p_pos+C0+2))
-      #     print(xm_flat[:, (p_real+p_count+p_pos+C0+2)])
-      # sys.exit("stop here")
-
-      xmgivenz_flat = xm_flat*(1-tiledtiledmask)
-      xincluded = xogivenz_flat + xmgivenz_flat
-      xincluded[:,ids_cat] = torch.clamp(xincluded[:,ids_cat], min=0.0001, max=0.9999)
+      if draw_xmiss:
+        # print(ids_real)
+        # print(q_xs['real'].rsample([M]).shape)
+        if exists_types[0]: xm_flat[:,ids_real] = q_xs['real'].rsample([M]).reshape([M*niw*batch_size,-1])
+        if exists_types[1]: xm_flat[:,ids_count] = q_xs['count'].rsample([M]).reshape([M*niw*batch_size,-1])
+        if exists_types[2]: xm_flat[:,ids_pos] = q_xs['pos'].rsample([M]).reshape([M*niw*batch_size,-1])
+        if exists_types[3]:
+          for ii in range(0,p_cat):
+            if ii==0: C0=0; C1=int(Cs[ii])
+            else: C0=C1; C1=C0+int(Cs[ii])
+            # xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = q_xs['cat'][ii].rsample([M]).reshape([M*niw*batch_size,-1])
+            xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1]).reshape([M*niw*batch_size,-1])  # just passing softmax probs
+            # print("out_encoders_xr[cat][" + str(ii) + "][:(" + str(M+1) + ")]")
+            # print(out_encoders_xr['cat'][ii][:(M+1)])
+            # print("repeated out_encoders_xr")
+            # print(torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1])[:(M+1)])
+            # # print("reshaped repeated out_encoders_xr")
+            # # print(torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1]).reshape([M*niw*batch_size,-1])[:(M+1)])  # same
+            # print("log px")
+            # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).shape)
+            # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])))
+            # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).reshape([M*niw*batch_size]))
+            # print("log qx")
+            # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).shape)
+            # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])))
+            # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).reshape([M*niw*batch_size]))
+            # print("(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])")
+            # print((1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)]))
+  
+        #     print("feature " + str(p_real+p_count+p_pos+C0))
+        #     print(xm_flat[:, (p_real+p_count+p_pos+C0)])
+        #     print("feature " + str(p_real+p_count+p_pos+C0+1))
+        #     print(xm_flat[:, (p_real+p_count+p_pos+C0+1)])
+        #     print("feature " + str(p_real+p_count+p_pos+C0+2))
+        #     print(xm_flat[:, (p_real+p_count+p_pos+C0+2)])
+        # sys.exit("stop here")
+  
+        xmgivenz_flat = xm_flat*(1-tiledtiledmask)
+        xincluded = xogivenz_flat + xmgivenz_flat
+        xincluded[:,ids_cat] = torch.clamp(xincluded[:,ids_cat], min=0.0001, max=0.9999)
+      else:
+        xincluded = tiled_tiled_iota_xfull
       # print(xincluded[:4])
       # samp_x = torch.mean(torch.mean((xincluded).reshape([M,-1]),axis=0).reshape([niw,-1]),axis=0).reshape([batch_size,p]) # average out IW's
     
@@ -414,9 +417,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     tiledmask = torch.Tensor.repeat(mask,[K,1]).cuda()
     tiled_iota_x = torch.Tensor.repeat(iota_x,[K,1]).cuda()
     #tiled_tiled_iota_x = torch.Tensor.repeat(tiled_iota_x,[M,1]).cuda()
-    # if (add_miss_term or not draw_xmiss) and not ignorable: tiled_iota_xfull = torch.Tensor.repeat(iota_xfull,[K,1]).cuda(); tiled_tiled_iota_xfull = torch.Tensor.repeat(tiled_iota_xfull,[M,1]).cuda()
-    # else: tiled_iota_xfull = None; tiled_tiled_iota_xfull = None
-    tiled_iota_xfull = None; tiled_tiled_iota_xfull = None
+    if (not draw_xmiss) and (not ignorable): tiled_iota_xfull = torch.Tensor.repeat(iota_xfull,[K,1]).cuda(); tiled_tiled_iota_xfull = torch.Tensor.repeat(tiled_iota_xfull,[M,1]).cuda()
+    else: tiled_iota_xfull = None; tiled_tiled_iota_xfull = None
+    # tiled_iota_xfull = None; tiled_tiled_iota_xfull = None
     
     if covars: tiled_tiled_covars_miss = torch.Tensor.repeat(torch.Tensor.repeat(covar_miss,[K,1]),[M,1])
     else: tiled_tiled_covars_miss=None
@@ -591,9 +594,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     #tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
     tiled_iota_x = torch.Tensor.repeat(iota_x,[L,1]).cuda()
     #tiled_tiled_iota_x = torch.Tensor.repeat(tiled_iota_x,[M,1]).cuda()
-    # if (add_miss_term or not draw_xmiss) and not ignorable: tiled_iota_xfull = torch.Tensor.repeat(iota_xfull,[L,1]).cuda(); tiled_tiled_iota_xfull = torch.Tensor.repeat(tiled_iota_xfull,[M,1]).cuda()
-    # else: tiled_iota_xfull = None; tiled_tiled_iota_xfull = None
-    tiled_iota_xfull = None; tiled_tiled_iota_xfull = None
+    if (not draw_xmiss) and not ignorable: tiled_iota_xfull = torch.Tensor.repeat(iota_xfull,[L,1]).cuda(); tiled_tiled_iota_xfull = torch.Tensor.repeat(tiled_iota_xfull,[M,1]).cuda()
+    else: tiled_iota_xfull = None; tiled_tiled_iota_xfull = None
+    # tiled_iota_xfull = None; tiled_tiled_iota_xfull = None
     
     if covars: tiled_tiled_covars_miss = torch.Tensor.repeat(torch.Tensor.repeat(covar_miss,[L,1]),[M,1])
     else: tiled_tiled_covars_miss = None
@@ -603,11 +606,53 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
 
     p_rgivenx, p_xs, q_xs, p_z, q_zgivenxobs, params_x, params_xr, params_r, params_z, zgivenx_flat, xincluded = forward(L, iota_xfull, iota_x, mask, batch_size, tiledmask, tiled_iota_x, tiled_iota_xfull, tiled_tiled_covars_miss, temp)
 
-    ## COMPUTE LOG PROBABILITIES (NO DECODER_R) ##
-    # all_log_pxgivenz = pxgivenz.log_prob(tiled_iota_x)
-    # all_log_pxgivenz_flat = all_log_pxgivenz.reshape([L*batch_size,p])
-    # logpxobsgivenz = torch.sum(all_log_pxgivenz*tiledmask,1).reshape([L,batch_size])
-    # sum_logpxobs = np.sum(logpxobsgivenz.cpu().data.numpy())
+    ## COMPUTE LOG PROBABILITIES ##
+    if not ignorable:
+      tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
+      all_logprgivenx = p_rgivenx.log_prob(tiledtiledmask)  # M*niw*bs x p
+      # sum across p features --> M*niw*bs --> sum over M --> niw*bs
+      logprgivenx = torch.sum(torch.sum(all_logprgivenx,1).reshape([M,L*batch_size]),0).reshape([L,batch_size])
+      sum_logpr = np.sum(logprgivenx.cpu().data.numpy())
+
+      logqxmissgivenzr = {}; logpxmissgivenz = {}
+      # can combine real, count, pos if we're continuing to treat them exactly the same (would save computation time)
+      if exists_types[0]:
+        logqxmissgivenzr['real'] = torch.sum(q_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,L*batch_size,p_real])).reshape([M*L*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,L*batch_size])
+        logpxmissgivenz['real'] = torch.sum(p_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,L*batch_size,p_real])).reshape([M*L*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,L*batch_size])
+      if exists_types[1]:
+        logqxmissgivenzr['count'] = torch.sum(q_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,L*batch_size,p_count])).reshape([M*L*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,L*batch_size])
+        logpxmissgivenz['count'] = torch.sum(p_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,L*batch_size,p_count])).reshape([M*L*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,L*batch_size])
+      if exists_types[2]:
+        logqxmissgivenzr['pos'] = torch.sum(q_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,L*batch_size,p_pos])).reshape([M*L*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,L*batch_size])
+        logpxmissgivenz['pos'] = torch.sum(p_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,L*batch_size,p_pos])).reshape([M*L*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,L*batch_size])
+      if exists_types[3]:
+        for ii in range(0,p_cat):
+          if ii==0: C0=0; C1=int(Cs[ii])
+          else: C0=C1; C1=C0+int(Cs[ii])
+          
+          logqxs = q_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,L*batch_size,-1])).reshape([M*L*batch_size])
+          logpxs = p_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,L*batch_size,-1])).reshape([M*L*batch_size])
+          if ii==0:
+            
+            logqxmissgivenzr['cat'] = (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
+            logpxmissgivenz['cat'] = (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
+          else:
+            logqxmissgivenzr['cat'] = logqxmissgivenzr['cat'] + (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
+            logpxmissgivenz['cat'] = logpxmissgivenz['cat'] + (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
+          
+          
+      logpxmissgivenzsum = torch.zeros([M,L*batch_size]).cuda(); logqxmissgivenzrsum = torch.zeros([M,L*batch_size]).cuda()
+      if exists_types[0]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['real']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['real']
+      if exists_types[1]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['count']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['count']
+      if exists_types[2]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['pos']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['pos']
+      if exists_types[3]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['cat']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['cat']
+      
+      logpxmissgivenzsum = torch.sum(logpxmissgivenzsum,0).reshape([L, batch_size])
+      logqxmissgivenzrsum = torch.sum(logqxmissgivenzrsum,0).reshape([L, batch_size])
+    else:
+      # if ignorably missing, no p(r|x), no q(xm|z,r), and no p(xm|z)
+      all_logprgivenx = torch.zeros([M*L*batch_size,p]).cuda(); logprgivenx=torch.zeros([1]).cuda(); sum_logpr=np.zeros(1); logqxmissgivenzr=torch.zeros([1]).cuda(); logpxmissgivenz=torch.zeros([1]).cuda(); KL2=torch.zeros([1]).cuda()
+    
     all_logpxobsgivenz = {}; logpxobsgivenz = torch.zeros([L,batch_size]).cuda()
     if exists_types[0]:
       all_logpxobsgivenz['real'] = torch.sum(p_xs['real'].log_prob(tiled_iota_x[:,ids_real]) * tiledmask[:,ids_real],1).reshape([L,batch_size])
@@ -622,13 +667,19 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       for ii in range(0,p_cat):
         if ii==0: C0=0; C1=int(Cs[ii])
         else: C0=C1; C1=C0+int(Cs[ii])
-        if ii==0: all_logpxobsgivenz['cat'] = (p_xs['cat'][ii].log_prob(tiled_iota_x[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)]).reshape([L*batch_size])*(1-tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([L,batch_size])
-        else: all_logpxobsgivenz['cat'] = all_logpxobsgivenz['cat'] + (p_xs['cat'][ii].log_prob(tiled_iota_x[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)]).reshape([L*batch_size])*(1-tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([L,batch_size])
+        logpxs = p_xs['cat'][ii].log_prob(tiled_iota_x[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)]).reshape([L*batch_size])
+        if ii==0: all_logpxobsgivenz['cat'] = (logpxs*(1-tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([L,batch_size])
+        else: all_logpxobsgivenz['cat'] = all_logpxobsgivenz['cat'] + (logpxs*(1-tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([L,batch_size])
+        
       logpxobsgivenz = logpxobsgivenz + all_logpxobsgivenz['cat']
-
+    
+    sum_logpxobs = np.sum(logpxobsgivenz.cpu().data.numpy())
     # logpz = p_z.log_prob(zgivenx)      # p_z: bs x d, zgivenx: niw x bs x d
     logpz = p_z.log_prob(zgivenx_flat.reshape([L,batch_size,d]))      # p_z: bs x d, zgivenx: niw x bs x d
+    sum_logpz = np.sum(logpz.cpu().data.numpy())
+
     logqz = q_zgivenxobs.log_prob(zgivenx_flat.reshape([L,batch_size,d]))
+    sum_logqz = np.sum(logqz.cpu().data.numpy())
 
     # if not ignorable:
     #   ## xdist: q(xm|z,r)
@@ -644,7 +695,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     #     # xdist = td.Independent(td.StudentT(loc=params_x['mean'],scale=params_x['sd'],df=params_x['df']),1)
     
     ## SELF-NORMALIZING IMPORTANCE WEIGHTS, USING SAMPLES OF Xm AND Z ##
-    imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpz - logqz,0) # these are w_1,....,w_L for all observations in the batch
+    # imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpz - logqz,0) # these are w_1,....,w_L for all observations in the batch
+    imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpxmissgivenzsum + logpz + logprgivenx - logqz - logqxmissgivenzrsum,0) # these are w_1,....,w_L for all observations in the batch
+    
     # xms = xdist.sample().reshape([L,batch_size,p])
     # print(xincluded[:4])
     # print(torch.mean(xincluded.reshape([M,L*batch_size,p]),0).reshape([L,batch_size,p]))
@@ -714,9 +767,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   sum_logpxobs_epoch=[]
 
   # only assign xfull to cuda if it's necessary (save GPU ram)
-  # if (add_miss_term or not draw_xmiss) and not ignorable: cuda_xfull = torch.from_numpy(xfull).float().cuda()
-  # else: cuda_xfull = None
-  cuda_xfull = None
+  if (not draw_xmiss) and not ignorable: cuda_xfull = torch.from_numpy(xfull).float().cuda()
+  else: cuda_xfull = None
+  # cuda_xfull = None
   
   # initialize early stop criteria/variables
   #n_epochs_stop = 101   # number of epochs system can not improve consecutively before early stop
@@ -764,7 +817,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         print("Epoch " + str(ep))
       # print("Epoch " + str(ep))
       perm = np.random.permutation(n) # We use the "random reshuffling" version of SGD
-      # if (add_miss_term or not draw_xmiss) and not ignorable: batches_full = np.array_split(xfull[perm,],n/bs)
+      if (not draw_xmiss) and not ignorable: batches_full = np.array_split(xfull[perm,],n/bs)
       batches_data = np.array_split(xhat_0[perm,], n/bs)
       batches_mask = np.array_split(mask0[perm,], n/bs)
       if covars: batches_covar = np.array_split(covars_miss[perm,], n/bs)
@@ -777,9 +830,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       
       for it in range(len(batches_data)):
         # print("minibatch " + str(it))
-        # if (add_miss_term or not draw_xmiss) and not ignorable: b_full = torch.from_numpy(batches_full[it]).float().cuda()
-        # else: b_full = None
-        b_full = None
+        if (not draw_xmiss) and not ignorable: b_full = torch.from_numpy(batches_full[it]).float().cuda()
+        else: b_full = None
+        # b_full = None
         b_data = torch.from_numpy(batches_data[it]).float().cuda()
         b_mask = torch.from_numpy(batches_mask[it]).float().cuda()
         if covars: b_covar = torch.from_numpy(batches_covar[it]).float().cuda()
@@ -908,20 +961,20 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         ### Now we do the imputation
 
         if not ignorable:
-          print("Decoder_r weights (columns = input, rows = output) first 4:")
-          print(decoder_r[0].weight[0:min(4,p),0:min(4,p)])
+          print("Decoder_r weights (columns = input, rows = output) first 6:")
+          print(decoder_r[0].weight[0:min(6,p),0:min(6,p)])
 
         t0_impute=time.time()
-        # if (add_miss_term or not draw_xmiss) and not ignorable: batches_full = np.array_split(xfull,n/impute_bs)
+        if (not draw_xmiss) and (not ignorable): batches_full = np.array_split(xfull,n/impute_bs)
         batches_data = np.array_split(xhat_0, n/impute_bs)
         batches_mask = np.array_split(mask0, n/impute_bs)
         if covars: batches_covar = np.array_split(covars_miss, n/impute_bs)
         splits = np.array_split(range(n),n/impute_bs)
         xhat_fits=[]
         for it in range(len(batches_data)):
-          # if (add_miss_term or not draw_xmiss) and not ignorable: b_full = torch.from_numpy(batches_full[it]).float().cuda()
-          # else: b_full = None
-          b_full = None
+          if (not draw_xmiss) and (not ignorable): b_full = torch.from_numpy(batches_full[it]).float().cuda()
+          else: b_full = None
+          # b_full = None
           b_data = torch.from_numpy(batches_data[it]).float().cuda()
           b_mask = torch.from_numpy(batches_mask[it]).float().cuda()
           if covars: b_covar = torch.from_numpy(batches_covar[it]).float().cuda()
@@ -1035,13 +1088,14 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         # print('Missing MSE  %g' %err['miss'])
         print('-----')
         # temp = torch.max(temp0*torch.exp(-ANNEAL_RATE*ep), temp_min)  # anneal the temp once every 100 iters? (Jang et al does every 1000 iters)
-      temp = torch.max(temp0-0.01*ep, temp_min)  # anneal every epoch (HIVAE)
+      temp = torch.max(temp0*torch.exp(-ANNEAL_RATE*ep), temp_min)  # anneal the temp once every iter? (Jang et al does every 1000 iters)
+      # temp = torch.max(temp0-0.01*ep, temp_min)  # anneal every epoch (HIVAE)
       if early_stop:
         ##################################################################
         ###### COMPUTE VALIDATION LOSS (for early stopping criteria) #####
         ##################################################################
         perm = np.random.permutation(n_val) # We use the "random reshuffling" version of SGD
-        # if (add_miss_term or not draw_xmiss) and not ignorable: batches_full = np.array_split(xfull_val[perm,],n_val/bs_val)
+        if (not draw_xmiss) and (not ignorable): batches_full = np.array_split(xfull_val[perm,],n_val/bs_val)
         batches_data = np.array_split(xhat_0_val[perm,], n_val/bs_val)
         batches_mask = np.array_split(mask0_val[perm,], n_val/bs_val)
         if covars: batches_covar = np.array_split(covars_miss_val[perm,], n_val/bs_val)
@@ -1051,9 +1105,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         # losses
         batches_val_loss = []
         for it in range(len(batches_data)):
-          # if (add_miss_term or not draw_xmiss) and not ignorable: b_full = torch.from_numpy(batches_full[it]).float().cuda()
-          # else: b_full = None
-          b_full = None
+          if (not draw_xmiss) and (not ignorable): b_full = torch.from_numpy(batches_full[it]).float().cuda()
+          else: b_full = None
+          # b_full = None
           b_data = torch.from_numpy(batches_data[it]).float().cuda()
           b_mask = torch.from_numpy(batches_mask[it]).float().cuda()
           if covars: b_covar = torch.from_numpy(batches_covar[it]).float().cuda()
@@ -1104,7 +1158,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
             print('Early stopping at epoch %d!' %ep)
             early_stop_epochs = ep
         if early_stopped: break
-
+      sys.stdout.flush()   # output everything
     if not ignorable:
       if (learn_r): saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders, 'decoder_r':decoder_r}
       else: saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders}
@@ -1137,7 +1191,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       #else: torch_covars_miss = None
 
       perm = np.random.permutation(n) # We use the "random reshuffling" version of SGD
-      # if (add_miss_term or not draw_xmiss) and not ignorable: batches_full = np.array_split(xfull[perm,],n/bs)
+      if (not draw_xmiss) and (not ignorable): batches_full = np.array_split(xfull[perm,],n/bs)
       batches_data = np.array_split(xhat_0[perm,], n/bs)
       batches_mask = np.array_split(mask0[perm,], n/bs)
       if covars: batches_covar = np.array_split(covars_miss[perm,], n/bs)
@@ -1166,9 +1220,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       loss_fits = []
 
       for it in range(len(batches_data)):
-        # if (add_miss_term or not draw_xmiss) and not ignorable: b_full = torch.from_numpy(batches_full[it]).float().cuda()
-        # else: b_full = None
-        b_full = None
+        if (not draw_xmiss) and (not ignorable): b_full = torch.from_numpy(batches_full[it]).float().cuda()
+        else: b_full = None
+        # b_full = None
         b_data = torch.from_numpy(batches_data[it]).float().cuda()
         b_mask = torch.from_numpy(batches_mask[it]).float().cuda()
         if covars: b_covar = torch.from_numpy(batches_covar[it]).float().cuda()
@@ -1213,16 +1267,16 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       
       t0_impute=time.time()
 
-      # if (add_miss_term or not draw_xmiss) and not ignorable: batches_full = np.array_split(xfull,n/impute_bs)
+      if (not draw_xmiss) and (not ignorable): batches_full = np.array_split(xfull,n/impute_bs)
       batches_data = np.array_split(xhat_0, n/impute_bs)
       batches_mask = np.array_split(mask0, n/impute_bs)
       if covars: batches_covar = np.array_split(covars_miss, n/impute_bs)
       splits = np.array_split(range(n),n/impute_bs)
       xhat_fits = []
       for it in range(len(batches_data)):
-        # if (add_miss_term or not draw_xmiss) and not ignorable: b_full = torch.from_numpy(batches_full[it]).float().cuda()
-        # else: b_full = None
-        b_full = None
+        if (not draw_xmiss) and (not ignorable): b_full = torch.from_numpy(batches_full[it]).float().cuda()
+        else: b_full = None
+        # b_full = None
         b_data = torch.from_numpy(batches_data[it]).float().cuda()
         b_mask = torch.from_numpy(batches_mask[it]).float().cuda()
         if covars: b_covar = torch.from_numpy(batches_covar[it]).float().cuda()

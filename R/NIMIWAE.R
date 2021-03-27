@@ -34,7 +34,7 @@
 #' @importFrom reticulate source_python import
 #'
 #' @export
-NIMIWAE = function(data, data_types, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE",
+NIMIWAE = function(data, data_types, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE", draw_xmiss=F,
                    hyperparameters=list(sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r=0L,
                                         bs=c(1000L), lr=c(0.001,0.01), dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))),
                                         niw=5L, n_epochs=2002L)
@@ -91,7 +91,7 @@ NIMIWAE = function(data, data_types, Missing, g, rdeponz=F, learn_r=T, phi0=NULL
                                             rdeponz=rdeponz, learn_r=learn_r,
                                             phi0=phi0,phi=phi,
                                             covars_r=covars_r_aug,
-                                            arch=arch, Cs=Cs, ignorable=ignorable), hyperparameters))
+                                            arch=arch, draw_xmiss=draw_xmiss, Cs=Cs, ignorable=ignorable), hyperparameters))
   # res = tuneHyperparams(method="NIMIWAE",data=data,Missing=Missing,g=g,
   #                                rdeponz=rdeponz, learn_r=learn_r,
   #                                phi0=phi0,phi=phi,
