@@ -71,7 +71,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
   np = reticulate::import("numpy")
 
   if(grepl("run_NIMIWAE",as.character(FUN))){
-    if(learn_r){phi0=NULL; phi=NULL}else{phi=np$array(phi)}
+    if(learn_r){phi0=NULL; phi=NULL}else{phi0=np$array(phi0); phi=np$array(phi)}
     list_train = list()
 
     #partial_opt=FALSE; nits=1L; nGibbs=0L; input_r="r"
