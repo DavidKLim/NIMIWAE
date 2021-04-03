@@ -43,7 +43,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
                            rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, Cs, ignorable=F, covars_r=rep(1,ncol(data)),
                            arch="IWAE", draw_xmiss=F,  # for NIMIWAE: whether each NN is optimized separately, architecture: VAE or IWAE
                            sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r=0L, bs=1000L, lr=c(0.001,0.01),
-                           dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))), niws=5L, n_epochs=2002L,
+                           dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))), niws=5L, n_imputations=5L, n_epochs=2002L,
                            data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
                            MissingDatas = NULL # just for vaeac
 ){
@@ -71,7 +71,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
   np = reticulate::import("numpy")
 
   if(grepl("run_NIMIWAE",as.character(FUN))){
-    if(learn_r){phi0=NULL; phi=NULL}else{phi0=np$array(phi0); phi=np$array(phi)}
+    if(learn_r | ignorable){phi0=NULL; phi=NULL}else{phi0=np$array(phi0); phi=np$array(phi)}
     list_train = list()
 
     #partial_opt=FALSE; nits=1L; nGibbs=0L; input_r="r"
@@ -112,6 +112,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
         # fix h3=0: Logistic Regression for p(r|x)
         # n_hidden_layers_r = n_hidden_layers[nn]   # eventually will change to this. Fix 0L case first
         # n_hidden_layers_r = 0L
+
         res_train = FUN(rdeponz=rdeponz, data=np$array(datas$train),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$train),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$train),
                         covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
                         ignorable=ignorable,n_hidden_layers=n_hidden_layers[nn], n_hidden_layers_r=n_hidden_layers_r,
@@ -120,7 +121,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
                         #add_miss_term=add_miss_term,#draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
                         pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=beta,beta_anneal_rate=beta_anneal_rate,
                         phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, train=1L,
-                        sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=niws[m]) #M=100L)
+                        sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations) #M=100L)
 
         res_valid = FUN(rdeponz=rdeponz, data=np$array(datas$valid),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$valid),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$valid),
                         covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
@@ -130,7 +131,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
                         #add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
                         pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=1,beta_anneal_rate=0,
                         phi0=phi0, phi=phi, warm_start=F, saved_model=res_train$'saved_model', train=0L,
-                        sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=niws[m]) #M=100L)
+                        sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations) #M=100L)
         #list_train[[index]] = res_train
         #LBs[index]=res_valid$'LB'
         print(c(h[i],bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,

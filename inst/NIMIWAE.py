@@ -46,11 +46,13 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   
   print("norm_means:");print(norm_means)
   print("norm_sds:");print(norm_sds)
-  temp0 = torch.ones([1], dtype=torch.float64, device='cuda:0')
-  temp = torch.ones([1], dtype=torch.float64, device='cuda:0')
+  # temp0 = torch.ones([1], dtype=torch.float64, device='cuda:0')
+  # temp = torch.ones([1], dtype=torch.float64, device='cuda:0')
+  temp0 = torch.tensor([0.5], dtype=torch.float64, device='cuda:0')
+  temp = torch.tensor([0.5], dtype=torch.float64, device='cuda:0')
   # temp_min = torch.tensor(0.5,device="cuda:0",dtype=torch.float64)
-  temp_min = torch.tensor(0.001,device="cuda:0",dtype=torch.float64)
-  ANNEAL_RATE = torch.tensor(0.001,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
+  temp_min = torch.tensor(0.1,device="cuda:0",dtype=torch.float64)
+  ANNEAL_RATE = torch.tensor(0.005,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
   # ANNEAL_RATE = torch.tensor(0.00003,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
   # ANNEAL_RATE = torch.tensor(0.0001,device="cuda:0",dtype=torch.float64)  # https://github.com/vithursant/VAE-Gumbel-Softmax
   
@@ -174,7 +176,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   K = niw # number of IS during training
 
   pr = np.sum(covars_r).astype(int)
-  if not learn_r: phi=torch.from_numpy(phi).float().cuda()
+  if learn_r and not ignorable: phi=torch.from_numpy(phi).float().cuda()
   
   # Define decoder/encoder
   p_z = td.Independent(td.Normal(loc=torch.zeros(d).cuda(),scale=torch.ones(d).cuda()),1)
@@ -290,9 +292,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     if exists_types[3]:
       for ii in range(0,p_cat):
         out_decoders['cat'].append( torch.clamp(torch.nn.Softmax(dim=1)(decoders['cat'][ii](zgivenx_flat)), min=0.0001, max=0.9999))
-        # p_xs['cat'].append(td.OneHotCategorical(probs=out_decoders['cat'][ii]))
-        p_xs['cat'].append(td.RelaxedOneHotCategorical(temperature=temp, probs=out_decoders['cat'][ii]))
-        params_x['cat'].append(torch.mean(out_decoders['cat'][ii],0).detach().cpu().data.numpy())
+        p_xs['cat'].append(td.OneHotCategorical(probs=out_decoders['cat'][ii]))
+        # p_xs['cat'].append(td.RelaxedOneHotCategorical(temperature=temp, probs=out_decoders['cat'][ii]))
+        params_x['cat'].append(torch.mean(out_decoders['cat'][ii].reshape([niw,batch_size,-1]),0).detach().cpu().data.numpy())
     # out_decoder_x = decoder_x(zgivenx_flat)
     # all_means_obs_model = out_decoder_x[..., :p]
     # all_scales_obs_model = torch.nn.Softplus()(out_decoder_x[..., p:(2*p)]) + 0.001
@@ -304,6 +306,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     #pxgivenz0=pxgivenz # save initial decoder_x distrib --> for p(xo|z) later. p(xm|z,r) gets iterated in Gibbs
     
     xm_flat = torch.ones([M*niw*batch_size,p]).cuda()
+    xogivenz_flat = tiled_tiled_iota_x*tiledtiledmask
     if not ignorable:
       ########## NEED TO SAMPLE M TIMES ############
       # xgivenz = pxgivenz.rsample([M]) # samples all observed/missing features. sampling once for each of the niw samples of z
@@ -311,7 +314,6 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       # if (not draw_xobs): xogivenz_flat = tiled_tiled_iota_x*tiledtiledmask # default. why would you draw observed values from p(x|z)?? maybe code out draw_xobs
       # else: xogivenz_flat = xgivenz_flat_draw*tiledtiledmask
       
-      xogivenz_flat = tiled_tiled_iota_x*tiledtiledmask
       
       ####### CHECKED UP TO HERE #############
       
@@ -339,9 +341,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           # print("Softmax(dim=1)")
           # print(torch.nn.Softmax(dim=1)(encoders_xr['cat'][ii](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1)))[:10])
           
-          q_xs['cat'].append(td.RelaxedOneHotCategorical(temperature=temp, probs=out_encoders_xr['cat'][ii]))
-          # q_xs['cat'].append(td.OneHotCategorical(probs=out_encoders_xr['cat'][ii]))
-          params_xr['cat'].append(torch.mean(out_encoders_xr['cat'][ii],0).detach().cpu().data.numpy())
+          # q_xs['cat'].append(td.RelaxedOneHotCategorical(temperature=temp, probs=out_encoders_xr['cat'][ii]))
+          q_xs['cat'].append(td.OneHotCategorical(probs=out_encoders_xr['cat'][ii]))
+          params_xr['cat'].append(torch.mean(out_encoders_xr['cat'][ii].reshape([niw,batch_size,-1]),0).detach().cpu().data.numpy())
           
       # sys.exit("stop here")
       
@@ -358,24 +360,10 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           for ii in range(0,p_cat):
             if ii==0: C0=0; C1=int(Cs[ii])
             else: C0=C1; C1=C0+int(Cs[ii])
-            xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = q_xs['cat'][ii].rsample([M]).reshape([M*niw*batch_size,-1])
+            # xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = q_xs['cat'][ii].rsample([M]).reshape([M*niw*batch_size,-1])
+            xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = q_xs['cat'][ii].sample([M]).reshape([M*niw*batch_size,-1])
             # xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1]).reshape([M*niw*batch_size,-1])  # just passing softmax probs
-            # print("out_encoders_xr[cat][" + str(ii) + "][:(" + str(M+1) + ")]")
-            # print(out_encoders_xr['cat'][ii][:(M+1)])
-            # print("repeated out_encoders_xr")
-            # print(torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1])[:(M+1)])
-            # # print("reshaped repeated out_encoders_xr")
-            # # print(torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1]).reshape([M*niw*batch_size,-1])[:(M+1)])  # same
-            # print("log px")
-            # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).shape)
-            # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])))
-            # print(p_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).reshape([M*niw*batch_size]))
-            # print("log qx")
-            # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).shape)
-            # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])))
-            # print(q_xs['cat'][ii].log_prob(xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,niw*batch_size,-1])).reshape([M*niw*batch_size]))
-            # print("(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])")
-            # print((1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)]))
+            
   
         #     print("feature " + str(p_real+p_count+p_pos+C0))
         #     print(xm_flat[:, (p_real+p_count+p_pos+C0)])
@@ -419,7 +407,26 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     
       p_rgivenx = td.Bernoulli(probs=prob_Missing)
     else:
-      p_rgivenx=None; qxgivenzr=None; xgivenzr=None
+      p_rgivenx=None; q_xs=None;  params_xr=None; params_r=None
+      # if draw_xmiss, draw missing values from q(xm|...)
+      if draw_xmiss:
+        # print(ids_real)
+        # print(q_xs['real'].rsample([M]).shape)
+        if exists_types[0]: xm_flat[:,ids_real] = p_xs['real'].sample([M]).reshape([M*niw*batch_size,-1])
+        if exists_types[1]: xm_flat[:,ids_count] = p_xs['count'].sample([M]).reshape([M*niw*batch_size,-1])
+        if exists_types[2]: xm_flat[:,ids_pos] = p_xs['pos'].sample([M]).reshape([M*niw*batch_size,-1])
+        if exists_types[3]:
+          for ii in range(0,p_cat):
+            if ii==0: C0=0; C1=int(Cs[ii])
+            else: C0=C1; C1=C0+int(Cs[ii])
+            xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = p_xs['cat'][ii].sample([M]).reshape([M*niw*batch_size,-1])
+
+  
+        xmgivenz_flat = xm_flat*(1-tiledtiledmask)
+        xincluded = xogivenz_flat + xmgivenz_flat
+        xincluded[:,ids_cat] = torch.clamp(xincluded[:,ids_cat], min=0.0001, max=0.9999)
+      else:
+        xincluded = tiled_tiled_iota_xfull
     
     ## OUTPUTS ##
     # if dec_distrib=="Normal":
@@ -563,7 +570,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           
     else:
       # if ignorably missing, no p(r|x), no q(xm|z,r), and no p(xm|z)
-      all_logprgivenx = torch.zeros([M*K*batch_size,p]).cuda(); logprgivenx=torch.zeros([1]).cuda(); sum_logpr=np.zeros(1); logqxmissgivenzr=torch.zeros([1]).cuda(); logpxmissgivenz=torch.zeros([1]).cuda(); KL2=torch.zeros([1]).cuda()
+      all_logprgivenx = torch.zeros([M*K*batch_size,p]).cuda(); logprgivenx=torch.zeros([1]).cuda(); sum_logpr=np.zeros(1)
+      logqxmissgivenzr=torch.zeros([1]).cuda(); logpxmissgivenz=torch.zeros([1]).cuda(); KL2=torch.zeros([1]).cuda()
+      logqxmissgivenzrsum=torch.zeros([1]).cuda(); logpxmissgivenzsum = torch.zeros([1]).cuda()
     
     
     # all_log_pxgivenz = pxgivenz.log_prob(tiled_iota_x)
@@ -585,8 +594,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         if ii==0: C0=0; C1=int(Cs[ii])
         else: C0=C1; C1=C0+int(Cs[ii])
         logpxs = p_xs['cat'][ii].log_prob(tiled_iota_x[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)]).reshape([K*batch_size])
-        if ii==0: all_logpxobsgivenz['cat'] = (logpxs*(1-tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([K,batch_size])
-        else: all_logpxobsgivenz['cat'] = all_logpxobsgivenz['cat'] + (logpxs*(1-tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([K,batch_size])
+        if ii==0: all_logpxobsgivenz['cat'] = (logpxs*(tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([K,batch_size])
+        else: all_logpxobsgivenz['cat'] = all_logpxobsgivenz['cat'] + (logpxs*(tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([K,batch_size])
         
       logpxobsgivenz = logpxobsgivenz + all_logpxobsgivenz['cat']
     
@@ -704,8 +713,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         if ii==0: C0=0; C1=int(Cs[ii])
         else: C0=C1; C1=C0+int(Cs[ii])
         logpxs = p_xs['cat'][ii].log_prob(tiled_iota_x[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)]).reshape([L*batch_size])
-        if ii==0: all_logpxobsgivenz['cat'] = (logpxs*(1-tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([L,batch_size])
-        else: all_logpxobsgivenz['cat'] = all_logpxobsgivenz['cat'] + (logpxs*(1-tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([L,batch_size])
+        if ii==0: all_logpxobsgivenz['cat'] = (logpxs*(tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([L,batch_size])
+        else: all_logpxobsgivenz['cat'] = all_logpxobsgivenz['cat'] + (logpxs*(tiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([L,batch_size])
         
       logpxobsgivenz = logpxobsgivenz + all_logpxobsgivenz['cat']
     
@@ -731,8 +740,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     #     # xdist = td.Independent(td.StudentT(loc=params_x['mean'],scale=params_x['sd'],df=params_x['df']),1)
     
     ## SELF-NORMALIZING IMPORTANCE WEIGHTS, USING SAMPLES OF Xm AND Z ##
-    # imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpz - logqz,0) # these are w_1,....,w_L for all observations in the batch
-    imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpxmissgivenzsum + logpz + logprgivenx - logqz - logqxmissgivenzrsum,0) # these are w_1,....,w_L for all observations in the batch
+    imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpz - logqz,0) # these are w_1,....,w_L for all observations in the batch
+    # imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpxmissgivenzsum + logpz + logprgivenx - logqz - logqxmissgivenzrsum,0) # these are w_1,....,w_L for all observations in the batch
     
     # xms = xdist.sample().reshape([L,batch_size,p])
     # print(xincluded[:4])
@@ -912,7 +921,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           for ii in range(0, p_cat):
             params_x['cat'][ii][splits[it],:] = temp_params_x['cat'][ii]
             if not ignorable: params_xr['cat'][ii][splits[it],:] = temp_params_xr['cat'][ii]
-        params_r['probs'][splits[it],:] = temp_params_r['probs']
+        if not ignorable: params_r['probs'][splits[it],:] = temp_params_r['probs']
         params_z['mean'][splits[it],:] = temp_params_z['mean']; params_z['scale'][splits[it],:] = temp_params_z['scale']
         
         loss_fit.pop("neg_bound")  # remove loss to not save computational graph associated with it
@@ -1127,8 +1136,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         # print('Missing MSE  %g' %err['miss'])
         print('-----')
         # temp = torch.max(temp0*torch.exp(-ANNEAL_RATE*ep), temp_min)  # anneal the temp once every 100 iters? (Jang et al does every 1000 iters)
-      temp = torch.max(temp0*torch.exp(-ANNEAL_RATE*ep), temp_min)  # anneal the temp once every iter? (Jang et al does every 1000 iters)
-      # temp = torch.max(temp0-0.01*ep, temp_min)  # anneal every epoch (HIVAE)
+      # temp = torch.max(temp0*torch.exp(-ANNEAL_RATE*ep), temp_min)  # anneal the temp once every iter? (Jang et al does every 1000 iters)
+      temp = torch.max(temp0-ANNEAL_RATE*ep, temp_min)  # anneal every epoch (HIVAE)
       if early_stop:
         ##################################################################
         ###### COMPUTE VALIDATION LOSS (for early stopping criteria) #####
@@ -1207,7 +1216,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       saved_model={'encoder':encoder,'decoders':decoders}
     
     all_params = {'x': params_x, 'z': params_z}
-    all_params['r'] = params_r
+    if (not ignorable) and learn_r: all_params['r'] = params_r
     if not ignorable: all_params['xm'] = params_xr
     
     
@@ -1291,7 +1300,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           for ii in range(0, p_cat):
             params_x['cat'][ii][splits[it],:] = temp_params_x['cat'][ii]
             if not ignorable: params_xr['cat'][ii][splits[it],:] = temp_params_xr['cat'][ii]
-        params_r['probs'][splits[it],:] = temp_params_r['probs']
+        if not ignorable: params_r['probs'][splits[it],:] = temp_params_r['probs']
         params_z['mean'][splits[it],:] = temp_params_z['mean']; params_z['scale'][splits[it],:] = temp_params_z['scale']
         
         loss_fit.pop("neg_bound")
@@ -1421,7 +1430,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       saved_model={'encoder': encoder, 'decoders': decoders}
     
     all_params = {'x': params_x, 'z': params_z}
-    all_params['r'] = params_r
+    if (not ignorable) and learn_r: all_params['r'] = params_r
     if not ignorable: all_params['xm'] = params_xr
     
     if learn_r: decoder_r_weights = (decoder_r[0].weight).cpu().data.numpy()

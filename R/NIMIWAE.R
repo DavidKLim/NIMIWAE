@@ -16,7 +16,7 @@
 #' @param ignorable TRUE/FALSE: Whether missingness is ignorable (MCAR/MAR) or nonignorable (MNAR, default). If missingness is known to be ignorable, "ignorable=T" omits missingness model.
 #' @param covars_r Vector of 1's and 0's of whether each feature is included as covariates in the missingness model. Need not be specified if `ignorable = T`. Default is using all features as covariates in missingness model. Must be length P (or `ncol(data)`)
 #' @param arch Architecture of NIMIWAE. Can be "IWAE" or "VAE". "VAE" is specific case of the "IWAE" where only one sample is drawn from the joint posterior of (z, xm).
-#' @param hyperparameters List of grid of hyperparameter values to search. Relevant hyperparameters: `sigma`: activation function ("relu" or "elu"), `h`: number of nodes per hidden layer, `n_hidden_layers`: #hidden layers (except missingness model Decoder_r), `n_hidden_layers_r`: #hidden layers in missingness model (Decoder_r), `bs`: batch size, `lr`: learning rate, `dim_z`: dimensionality of latent z, `niw`: number of importance weights (samples drawn from each latent space), `n_epochs`: maximum number of epochs
+#' @param hyperparameters List of grid of hyperparameter values to search. Relevant hyperparameters: `sigma`: activation function ("relu" or "elu"), `h`: number of nodes per hidden layer, `n_hidden_layers`: #hidden layers (except missingness model Decoder_r), `n_hidden_layers_r`: #hidden layers in missingness model (Decoder_r), `bs`: batch size, `lr`: learning rate, `dim_z`: dimensionality of latent z, `niw`: number of importance weights (samples drawn from each latent space), `n_imputations`, `n_epochs`: maximum number of epochs
 #' @return res object: NIMIWAE fit containing ... on the test set
 #' @examples
 #' fit_data = read_data("CONCRETE"); data = fit_data$data
@@ -37,7 +37,7 @@
 NIMIWAE = function(data, data_types, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE", draw_xmiss=F,
                    hyperparameters=list(sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r=0L,
                                         bs=c(1000L), lr=c(0.001,0.01), dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))),
-                                        niw=5L, n_epochs=2002L)
+                                        niw=5L, n_imputations=5L, n_epochs=2002L)
                    ){
 
   #############################################################################################################
@@ -75,6 +75,7 @@ NIMIWAE = function(data, data_types, Missing, g, rdeponz=F, learn_r=T, phi0=NULL
       covars_r_aug = c(covars_r_aug, rep(covars_r[data_types=="cat"][i],Cs[i]))
     }
     data_types_aug = c( data_types[!(data_types %in% c("cat"))], rep("cat",sum(Cs)) )
+    Cs = np$array(Cs)
   }
 
   # 2) set up g= ... splits in this function
