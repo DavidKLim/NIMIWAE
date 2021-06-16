@@ -6,7 +6,7 @@
 \usage{
 read_data(
   dataset = c("Physionet_mean", "Physionet_all", "HEPMASS", "POWER", "GAS", "IRIS",
-    "RED", "WHITE", "YEAST", "BREAST", "CONCRETE", "BANKNOTE", "SIM"),
+    "RED", "WHITE", "YEAST", "BREAST", "CONCRETE", "BANKNOTE"),
   ratio = c(6, 2, 2),
   g_seed = 333
 )

@@ -6,6 +6,7 @@
 \usage{
 NIMIWAE(
   data,
+  data_types,
   Missing,
   g,
   rdeponz = F,
@@ -15,13 +16,17 @@ NIMIWAE(
   ignorable = F,
   covars_r = rep(1, ncol(data)),
   arch = "IWAE",
+  draw_xmiss = F,
   hyperparameters = list(sigma = "elu", h = c(128L, 64L), n_hidden_layers = c(1L, 2L),
     n_hidden_layers_r = 0L, bs = c(1000L), lr = c(0.001, 0.01), dim_z =
-    as.integer(c(floor(ncol(data)/2), floor(ncol(data)/4))), niw = 5L, n_epochs = 2002L)
+    as.integer(c(floor(ncol(data)/2), floor(ncol(data)/4))), niw = 5L, n_imputations =
+    5L, n_epochs = 2002L)
 )
 }
 \arguments{
 \item{data}{Data matrix (N x P)}
+
+\item{data_types}{Vector of data types ("real", "count", "pos", "cat")}
 
 \item{Missing}{Missingness mask matrix (N x P)}
 
@@ -41,7 +46,7 @@ NIMIWAE(
 
 \item{arch}{Architecture of NIMIWAE. Can be "IWAE" or "VAE". "VAE" is specific case of the "IWAE" where only one sample is drawn from the joint posterior of (z, xm).}
 
-\item{hyperparameters}{List of grid of hyperparameter values to search. Relevant hyperparameters: `sigma`: activation function ("relu" or "elu"), `h`: number of nodes per hidden layer, `n_hidden_layers`: #hidden layers (except missingness model Decoder_r), `n_hidden_layers_r`: #hidden layers in missingness model (Decoder_r), `bs`: batch size, `lr`: learning rate, `dim_z`: dimensionality of latent z, `niw`: number of importance weights (samples drawn from each latent space), `n_epochs`: maximum number of epochs}
+\item{hyperparameters}{List of grid of hyperparameter values to search. Relevant hyperparameters: `sigma`: activation function ("relu" or "elu"), `h`: number of nodes per hidden layer, `n_hidden_layers`: #hidden layers (except missingness model Decoder_r), `n_hidden_layers_r`: #hidden layers in missingness model (Decoder_r), `bs`: batch size, `lr`: learning rate, `dim_z`: dimensionality of latent z, `niw`: number of importance weights (samples drawn from each latent space), `n_imputations`, `n_epochs`: maximum number of epochs}
 }
 \value{
 res object: NIMIWAE fit containing ... on the test set

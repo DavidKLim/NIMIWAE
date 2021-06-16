@@ -21,6 +21,7 @@ split_data = function(data, ratio=c(6,2,2), seed=333){
 #' @param seed Seed. Either set custom or set some value x sim_index. Default: 9 x sim_index
 #' @param ratio Train-valid-test ratio for splitting of observations
 #' @param g_seed Seed for train-valid-test dataset splitting of observations
+#' @param beta coefficients for each column of X in simulating a binary class response variable
 #' @return list of objects: data (N x P matrix), classes (subgroups of observations), params (those used for simulating data), and g (partitioning of data into train-valid-test sets)
 #' @examples
 #' simulate_data(N = 10000, D = 2, P = 8, sim_index = 1)
@@ -29,7 +30,8 @@ split_data = function(data, ratio=c(6,2,2), seed=333){
 #' @references \url{https://github.com/DavidKLim/NIMIWAE}
 #'
 #' @export
-simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(6,2,2), g_seed = 333){
+simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(6,2,2), g_seed = 333,
+                         beta=c(rep(-1,floor(P/2)), rep(1, P-floor(P/2)))){
   # simulate data by simulating D-dimensional Z latent variable for N observations
   # and then apply W and B (both drawn from N(0,1)) weights and biases to obtain X
   set.seed(seed)
@@ -45,8 +47,34 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(6,2,2),
   }
   X = Z%*%W + B
   data = X
-  classes=rep(1,N)
-  params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed)
+  # classes=rep(1,N)  # let's make this our response variable
+
+  find_int = function(p,beta) {
+    # Define a path through parameter space
+    f = function(t){
+      sapply(t, function(y) mean(1 / (1 + exp(-y -X %*% beta))))
+    }
+    alpha <- uniroot(function(t) f(t) - p, c(-1e6, 1e6), tol = .Machine$double.eps^0.5)$root
+    return(alpha)
+  }
+  inv_logit = function(x){
+    return(1/(1+exp(-x)))
+  }
+  logit = function(x){
+    if(x<=0 | x>=1){stop('x must be in (0,1)')}
+    return(log(x/(1-x)))
+  }
+  alph <- sapply(0.5, function(y)find_int(y,beta))
+
+  beta0 = alph
+  mod = beta0 + X%*%beta
+
+  probs = inv_logit(mod)
+  classes = rbinom(n,1,probs)
+
+
+
+  params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, beta0=beta0, beta=beta, probs=probs, seed=seed)
 
   # ## simulate clustered data?
   # if(dataset=="TOYZ_CLUSTER"){

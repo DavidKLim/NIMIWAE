@@ -9,15 +9,19 @@ tuneHyperparams(
   method = "NIMIWAE",
   dataset,
   data,
+  data_types,
+  data_types_0,
   Missing,
   g,
   rdeponz = F,
   learn_r = T,
   phi0 = NULL,
   phi = NULL,
+  Cs,
   ignorable = F,
   covars_r = rep(1, ncol(data)),
   arch = "IWAE",
+  draw_xmiss = F,
   sigma = "elu",
   h = c(128L, 64L),
   n_hidden_layers = c(1L, 2L),
@@ -26,8 +30,9 @@ tuneHyperparams(
   lr = c(0.001, 0.01),
   dim_z = as.integer(c(floor(ncol(data)/2), floor(ncol(data)/4))),
   niws = 5L,
+  n_imputations = 5L,
   n_epochs = 2002L,
-  data_types = NULL,
+  data_types_HIVAE = NULL,
   one_hot_max_sizes = NULL,
   ohms = NULL,
   MissingDatas = NULL
@@ -40,6 +45,8 @@ tuneHyperparams(
 
 \item{data}{Data matrix (N x P)}
 
+\item{data_types}{vector of length=ncol(data). Valid values: "real", "count", "cat" or "pos"}
+
 \item{Missing}{Missingness mask matrix (N x P)}
 
 \item{g}{Training-validation-test split partitioning}
@@ -51,6 +58,8 @@ tuneHyperparams(
 \item{phi0}{(optional) Intercept of logistic regression model, if learn_r = FALSE.}
 
 \item{phi}{(optional) Vector of coefficients of logistic regression model for each input covariates `covars_r`, if learn_r = FALSE. `phi` must be the same length as the number of input covariates, or `sum(covars_r)`.}
+
+\item{Cs}{(optional) # factors for categorical variables. Must be of length = # of categorical variables.}
 
 \item{ignorable}{TRUE/FALSE: Whether missingness is ignorable (MCAR/MAR) or nonignorable (MNAR, default). If missingness is known to be ignorable, "ignorable=T" omits missingness model.}
 
@@ -72,7 +81,7 @@ tuneHyperparams(
 
 \item{dim_z}{integer, dimensionality of latent z. Default: 5}
 
-\item{data_types}{Specify for HIVAE only.}
+\item{data_types_HIVAE}{Specify for HIVAE only.}
 
 \item{one_hot_max_sizes}{Specify for VAEAC only.}
 

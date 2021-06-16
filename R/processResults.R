@@ -63,6 +63,7 @@ processResults=function(data=NULL, Missing=NULL, g=NULL, res=NULL,
   if(is.null(data)){ load(data.file.name) }     # if data is not specified, will look for data.file.name (which contains data, Missing, and g)
   datas = split(data.frame(data), g)        # split by $train, $test, and $valid
   Missings = split(data.frame(Missing), g)
+  classess = split(data.frame(classes),g)
   norm_means=colMeans(datas$train); norm_sds=apply(datas$train,2,sd)
 
   # if res object is input, then use this. If no res object, look for file name from which to obtain res. res object should be saved as "res_<method>"
@@ -73,8 +74,10 @@ processResults=function(data=NULL, Missing=NULL, g=NULL, res=NULL,
   }
 
   #xhat=reverse_norm_MIWAE(res$xhat,norm_means,norm_sds)   # already reversed
-  if(method %in% c("MIWAE","NIMIWAE")){
-    xhat=res$xhat_rev
+  if(method == "NIMIWAE"){
+    xhat=fit$xhat
+  }else if(method == "MIWAE"){
+    xhat=fit$xhat_rev
   }else if(method =="HIVAE"){
     xhat=res$data_reconstructed
   }else if(method=="VAEAC"){
@@ -93,6 +96,8 @@ processResults=function(data=NULL, Missing=NULL, g=NULL, res=NULL,
     # xhat = res$xhat_rev
     if(is.null(res$xhat_rev)){res$xhat_rev = reverse_norm_MIWAE(res$xhat_mf,norm_means,norm_sds)}
     xhat = res$xhat_rev
+  }else if(method=="MICE"){
+    xhat = res$xhat
   }
 
   # check same xhat:
@@ -118,5 +123,25 @@ processResults=function(data=NULL, Missing=NULL, g=NULL, res=NULL,
   #results = c(unlist(imputation_metrics),LB,time)
   #names(results)[(length(results)-1):length(results)]=c("LB","time")
   results = c(unlist(imputation_metrics))
+
+  ratio = 0.8; n_train = floor(ratio*nrow(xhat)); n_test = nrow(xhat) - n_train
+  idx = c( rep(T, n_train) , rep(F, n_test) )
+
+  predict_classes = function(X_train, y_train, X_test, y_test, family="binomial"){
+    data_train = cbind(X_train, y_train)
+    fit = glm(y_train ~ 1 + X_train, family=family)
+    y_predicted = predict(fit, newdata=X_test)
+
+    return(list(fit_train = fit, y_predicted = y_predicted,
+                acc = mean(y_predicted==y_test)))
+  }
+
+  fit_pred_imputed = predict_classes(X_train=xhat[idx,], y_train=classess$test[idx], X_test=xhat[!idx,], y_test=classess$test[!idx])
+  fit_pred_true = predict_classes(X_train=datas$test[idx,], y_train=classess$test[idx], X_test=datas$test[!idx,], y_test=classess$test[!idx])
+
+  fits_pred = list(imputed = fit_pred_imputed,
+                   true = fit_pred_true)
+  res$fits_pred = fits_pred
+
   return(list(res=res,results=results,call=call_name))
 }
