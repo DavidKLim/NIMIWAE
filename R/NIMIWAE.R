@@ -16,7 +16,7 @@
 #' @param ignorable TRUE/FALSE: Whether missingness is ignorable (MCAR/MAR) or nonignorable (MNAR, default). If missingness is known to be ignorable, "ignorable=T" omits missingness model.
 #' @param covars_r Vector of 1's and 0's of whether each feature is included as covariates in the missingness model. Need not be specified if `ignorable = T`. Default is using all features as covariates in missingness model. Must be length P (or `ncol(data)`)
 #' @param arch Architecture of NIMIWAE. Can be "IWAE" or "VAE". "VAE" is specific case of the "IWAE" where only one sample is drawn from the joint posterior of (z, xm).
-#' @param hyperparameters List of grid of hyperparameter values to search. Relevant hyperparameters: `sigma`: activation function ("relu" or "elu"), `h`: number of nodes per hidden layer, `n_hidden_layers`: #hidden layers (except missingness model Decoder_r), `n_hidden_layers_r`: #hidden layers in missingness model (Decoder_r), `bs`: batch size, `lr`: learning rate, `dim_z`: dimensionality of latent z, `niw`: number of importance weights (samples drawn from each latent space), `n_imputations`, `n_epochs`: maximum number of epochs
+#' @param hyperparameters List of grid of hyperparameter values to search. Relevant hyperparameters: `sigma`: activation function ("relu" or "elu"), `h`: number of nodes per hidden layer, `n_hidden_layers`: #hidden layers (except missingness model Decoder_r), `n_hidden_layers_r`: #hidden layers in missingness model (Decoder_r). If "NULL" then set as the same value as each n_hidden_layers (not tuned). Otherwise, can tune a different grid of values; `bs`: batch size, `lr`: learning rate, `dim_z`: dimensionality of latent z, `niw`: number of importance weights (samples drawn from each latent space), `n_imputations`, `n_epochs`: maximum number of epochs
 #' @return res object: NIMIWAE fit containing ... on the test set
 #' @examples
 #' fit_data = read_data("CONCRETE"); data = fit_data$data
@@ -34,12 +34,13 @@
 #' @importFrom reticulate source_python import
 #'
 #' @export
-NIMIWAE = function(data, data_types, Missing, g, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE", draw_xmiss=F,
-                   hyperparameters=list(sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r=0L,
+NIMIWAE = function(data, dataset, data_types, Missing, g=NULL, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE", draw_xmiss=T,
+                   hyperparameters=list(sigma="elu", h=c(64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=c(0L,1L),
                                         bs=c(1000L), lr=c(0.001,0.01), dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))),
-                                        niw=5L, n_imputations=5L, n_epochs=2002L)
+                                        niw=5L, n_imputations=5L, n_epochs=2002L), save_imps=F, dir_name=".", normalize=T
                    ){
 
+  ## n_hidden_layers_r is set as the same as n_hidden_layers, unless an integer is specified
   #############################################################################################################
   ############ DEFINE Cs, and create X_aug (split categorical values to dummy variables of 1/0) ###############
   #############################################################################################################
@@ -81,18 +82,17 @@ NIMIWAE = function(data, data_types, Missing, g, rdeponz=F, learn_r=T, phi0=NULL
   # 2) set up g= ... splits in this function
   # datas = split(data.frame(data), g)        # split by $train, $test, and $valid
   # Missings = split(data.frame(Missing), g)
-  datas = split(data.frame(data_aug), g)        # split by $train, $test, and $valid
-  Missings = split(data.frame(Missing_aug), g)
 
   # norm_means=colMeans(datas$train); norm_sds=apply(datas$train,2,sd)    # calculate normalization mean/sd on training set --> use for all
 
   reticulate::source_python(system.file("NIMIWAE.py", package = "NIMIWAE"))
-
-  res = do.call(NIMIWAE::tuneHyperparams, c(list(method="NIMIWAE",data=data_aug,data_types=data_types_aug, data_types_0=data_types_0,Missing=Missing_aug,g=g,
+  t0 = Sys.time()
+  res = do.call(NIMIWAE::tuneHyperparams, c(list(method="NIMIWAE",data=data_aug,dataset=dataset,data_types=data_types_aug, data_types_0=data_types_0,Missing=Missing_aug,g=g,
                                             rdeponz=rdeponz, learn_r=learn_r,
                                             phi0=phi0,phi=phi,
                                             covars_r=covars_r_aug,
-                                            arch=arch, draw_xmiss=draw_xmiss, Cs=Cs, ignorable=ignorable), hyperparameters))
+                                            arch=arch, draw_xmiss=draw_xmiss, Cs=Cs, ignorable=ignorable, save_imps=save_imps, dir_name=dir_name, normalize=normalize), hyperparameters))
+  res$time = as.numeric(Sys.time()-t0, units="secs")
   # res = tuneHyperparams(method="NIMIWAE",data=data,Missing=Missing,g=g,
   #                                rdeponz=rdeponz, learn_r=learn_r,
   #                                phi0=phi0,phi=phi,
