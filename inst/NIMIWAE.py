@@ -1098,10 +1098,15 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           print('Observed MSE x_pos:  %g' %err_pos['obs'])
           print('Missing MSE x_pos:  %g' %err_pos['miss'])
         
+        # print("L1 (missing):")
+        # print(np.mean(np.abs(xhat-xfull)[~mask]))
+        # print("L1 (observed):")
+        # print(np.mean(np.abs(xhat-xfull)[mask]))
+        
         print("L1 (missing):")
-        print(np.mean(np.abs(xhat-xfull)[~mask]))
+        print(np.mean(np.abs((xhat-xfull)*norm_sds)[~mask]))
         print("L1 (observed):")
-        print(np.mean(np.abs(xhat-xfull)[mask]))
+        print(np.mean(np.abs((xhat-xfull)*norm_sds)[mask]))
         ## Undo normalization
         # xhat = (xhat*norm_sds) + norm_means
         
@@ -1154,6 +1159,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         print(xhat[:4,:min(4,p)])
         print("xhat2 (first 4):")
         print(xhat2[:4,:min(4,p)])
+        print("mask (first 4):")
+        print(mask[:4,:min(4,p)])
 
         zgivenx = xhat_fit['zgivenx'].cpu().data.numpy()   # L samples*batch_size x d (d: latent dimension)
         imp_weights = xhat_fit['imp_weights'].cpu().data.numpy()
@@ -1251,6 +1258,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     # return {'train_params':train_params, 'loss_fits': loss_fits,'xhat_fits':xhat_fits,'saved_model': saved_model,'LB': NIMIWAE_LB,'zgivenx_flat': zgivenx_flat,'NIMIWAE_LB_epoch': NIMIWAE_LB_epoch,'NIMIWAE_val_LB_epoch': NIMIWAE_val_LB_epoch,'time_train': time_train,'time_impute': time_impute,'imp_weights': imp_weights,'MSE': mse_train, 'xhat': xhat, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds}
     return {'all_params': all_params,'train_params':train_params,'xhat_fits':xhat_fits,'saved_model': saved_model,'LB': NIMIWAE_LB,'zgivenx': zgivenx,'NIMIWAE_LB_epoch': NIMIWAE_LB_epoch,'NIMIWAE_val_LB_epoch': NIMIWAE_val_LB_epoch,'time_train': time_train,'time_impute': time_impute,'imp_weights': imp_weights,'xhat': xhat, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds, 'covars_r':covars_r}
   else:
+    import h5py
+    hf = h5py.File(dir_name + '/samples.h5', 'w')
     temp=temp_min
     # validating (hyperparameter values) or testing
     encoder=saved_model['encoder']
@@ -1293,8 +1302,11 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       if learn_r and not ignorable: decoder_r.zero_grad()
 
       loss_fits = []
-
+      
+      print("# batches:")
+      print(len(batches_data))
       for it in range(len(batches_data)):
+        print("batch" + str(it) + ":")
         if (not draw_xmiss) and (not ignorable): b_full = torch.from_numpy(batches_full[it]).float().cuda()
         else: b_full = None
         # b_full = None
@@ -1337,8 +1349,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         params_z['mean'][splits[it],:] = temp_params_z['mean']; params_z['scale'][splits[it],:] = temp_params_z['scale']
         
         loss_fit.pop("neg_bound")
-        loss_fits = np.append(loss_fits, {'loss_fit': loss_fit, 'obs_ids': splits[it]})
+        # loss_fits = np.append(loss_fits, {'loss_fit': loss_fit, 'obs_ids': splits[it]})
        
+      print("Done with forward statement.")
       total_loss = -np.sum(batches_loss)   # negative of the total loss (summed over K & bs)
       if(arch=="VAE"):
         NIMIWAE_LB = total_loss / (niw*n)
@@ -1351,24 +1364,29 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         ## loss = loss/(b_data.shape[0]) + np.log(K) + np.log(M)   # loss for a batch
       
       t0_impute=time.time()
-
       if (not draw_xmiss) and (not ignorable): batches_full = np.array_split(xfull,n/impute_bs)
       batches_data = np.array_split(xhat_0, n/impute_bs)
       batches_mask = np.array_split(mask, n/impute_bs)
       batches_mask0 = np.array_split(mask0, n/impute_bs)
       if covars: batches_covar = np.array_split(covars_miss, n/impute_bs)
       splits = np.array_split(range(n),n/impute_bs)
-      xhat_fits = []
+      xhat_fits = []   # not saved now
+      
       if save_imps:
-        all_zgivenxs = np.empty([L,n,d])  ### np array or torch tensor?
-        if not ignorable: all_xms = np.empty([M*L,n,p])
-        else: all_xms = np.empty([L,n,p])
-      if not ignorable: all_imp_weights = np.empty([M*L,n])
-      else: all_imp_weights = np.empty([L,n])
-        # all_xms = np.empty([L,n,p])
-        # if ignorable: all_xms = np.empty([L,n,p])
-        # else: all_xms = np.empty([M*L,n,p])
+        
+        if not ignorable: all_imp_weights = np.empty([M*L,n])
+        else: all_imp_weights = np.empty([L,n])
+        if ignorable: all_xms = np.empty([L,np.sum(Missing==0)])
+        else: all_xms = np.empty([M*L,np.sum(Missing==0)])
+        
+        idsx, idsy = np.where(Missing==0)
+        # np.savetxt(dir_name + '/miss_XY.csv',np.stack((idsx,idsy),axis=1),delimiter=",")   # X coords in 1st column, Y coords in 2nd column
+        hf.create_dataset("miss_XY", data=np.stack((idsx,idsy),axis=1), compression="gzip", compression_opts=9)
+        
+      print("# batches:")
+      print(len(batches_data))
       for it in range(len(batches_data)):
+        print("batch" + str(it) + ":")
         if (not draw_xmiss) and (not ignorable): b_full = torch.from_numpy(batches_full[it]).float().cuda()
         else: b_full = None
         # b_full = None
@@ -1378,7 +1396,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         if covars: b_covar = torch.from_numpy(batches_covar[it]).float().cuda()
         else: b_covar = None
         xhat_fit=nimiwae_impute(iota_xfull = b_full, iota_x = b_data, mask = b_mask, mask0 = b_mask0, covar_miss = b_covar, L=L, temp=temp)
-        xhat_fits = np.append(xhat_fits, {'xhat_fit': xhat_fit, 'obs_ids': splits[it]})
+        # xhat_fits = np.append(xhat_fits, {'xhat_fit': xhat_fit, 'obs_ids': splits[it]})
         #print(b_data[:4]); print(xhat_0[:4]); print(b_mask[:4]); print(mask[:4])
         b_xhat = xhat[splits[it],:]
         #b_xhat[batches_mask[it]] = torch.mean(loss_fit['params_x']['mean'].reshape([niw,-1]),axis=0).reshape([n,p])[splits[it],:].cpu().data.numpy()[batches_mask[it]]  # keep observed data as truth
@@ -1390,25 +1408,30 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         xms = xhat_fit['xms'].cpu().data.numpy() # [M*L,batch_size,p] for non-ignorable, [L,batch_size,p] for ignorable
         imp_weights = xhat_fit['imp_weights'].cpu().data.numpy()
         
-        #### need to batch-wise save these to an initialized dummy tensor
-        #### only need to do this if save_imps
+        
         if save_imps:
-          all_zgivenxs[:,splits[it],:] = zgivenx
-          all_xms[:,splits[it],:] = xms
-        
-        all_imp_weights[:,splits[it]] = imp_weights
-          
-        
+          ids = np.isin(idsx, splits[it])   # ids to replace in all_xms (just missing values)
+          for ii in range(0, xms.shape[0]):
+            all_xms[ii,ids] = xms[ii,:,:][b_mask.cpu().data.numpy()==0]
+          all_imp_weights[:,splits[it]] = imp_weights
+      
+      if save_imps:
+        for ii in range(0, xms.shape[0]):
+          # np.savetxt(dir_name + '/Xm'+str(ii)+".csv",all_xms[ii,:],delimiter=",")
+          hf.create_dataset("Xm"+str(ii), data=all_xms[ii,:], compression="gzip", compression_opts=9)
+        # np.savetxt(dir_name + "/IWs.csv",all_imp_weights, delimiter=",")  # should be L x n or M*L x n
+        hf.create_dataset("IWs", data=all_imp_weights, compression="gzip", compression_opts=9)
+      hf.close()
       #xhat_fit=nimiwae_impute(iota_xfull = cuda_xfull, iota_x = torch.from_numpy(xhat_0).float().cuda(),mask = torch.from_numpy(mask).float().cuda(),covar_miss = torch_covars_miss,L=L,temp=temp_min)
       time_impute=np.append(time_impute,time.time()-t0_impute)
       
-      ## if save_imps: then save all_zgivenxs and all_xms
-      if save_imps:
-        for ii in range(0, all_zgivenxs.shape[0]):
-          np.savetxt(dir_name + '/Z'+str(ii)+".csv",all_zgivenxs[ii,:,:],delimiter=",")
-        for ii in range(0, all_xms.shape[0]):
-          np.savetxt(dir_name + '/Xm'+str(ii)+".csv",all_xms[ii,:,:],delimiter=",")
-        np.savetxt(dir_name + "/IWs.csv",all_imp_weights, delimiter=",")  # should be L x n
+      # ## if save_imps: then save all_zgivenxs and all_xms
+      # if save_imps:
+      #   # for ii in range(0, all_zgivenxs.shape[0]):
+      #   #   np.savetxt(dir_name + '/Z'+str(ii)+".csv",all_zgivenxs[ii,:,:],delimiter=",")   ### Z's need not be saved
+      #   for ii in range(0, all_xms.shape[0]):
+      #     np.savetxt(dir_name + '/Xm'+str(ii)+".csv",all_xms[ii,:,:],delimiter=",")
+      #   np.savetxt(dir_name + "/IWs.csv",all_imp_weights, delimiter=",")  # should be L x n or M*L x n
         
       #### need to reconstruct tensors (b/c minibatching)
       #### need to pass directory to save: Results/SIM../phi../sim../MCAR/miss../)
@@ -1501,6 +1524,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     print("xhat0")
     print(xhat0[:4,:min(4,p)])
     
+    sys.stdout.flush()
     ########
     
     
@@ -1517,7 +1541,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     if learn_r and not ignorable: decoder_r_weights = (decoder_r[0].weight).cpu().data.numpy()
     else: decoder_r_weights=None
     # omitted saved_model from output when test time
-    return {'all_params': all_params,'decoder_r_weights': decoder_r_weights,'loss_fits':loss_fits, 'xhat_fits':xhat_fits,'zgivenx': zgivenx,'LB': NIMIWAE_LB,'time_impute': time_impute,'imp_weights': all_imp_weights, 'xhat': xhat, 'xfull': xfull, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds, 'covars_r':covars_r}
+    return {'all_params': all_params,'decoder_r_weights': decoder_r_weights,'loss_fits':loss_fits, 'xhat_fits':xhat_fits,'zgivenx': zgivenx,'LB': NIMIWAE_LB,'time_impute': time_impute, 'xhat': xhat, 'xfull': xfull, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds, 'covars_r':covars_r}
     #return {'loss_fit':loss_fit,'xhat_fit':xhat_fit,'zgivenx_flat': zgivenx_flat,'saved_model': saved_model,'LB': NIMIWAE_LB,'time_impute': time_impute,'imp_weights': imp_weights,'MSE': mse_test, 'xhat': xhat, 'xfull': xfull, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds}
   
 

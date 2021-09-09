@@ -75,11 +75,21 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
     datas = split(data.frame(data), g)        # split data into train-valid sets
     Missings = split(data.frame(Missing), g)
 
-    datas$test = data   # test set is entire data
-    Missings$test = Missing
+    # datas$test = data   # test set is entire data
+    # Missings$test = Missing
+
+    datas$test = datas$train   # test set is training set
+    Missings$test = Missings$train
+
+    print("test dataset")
+    print(dim(datas$test))
+    print(dim(Missings$test))
   }else{
-    datas = split(data.frame(data), g)        # split by $train, $test, and $valid
+    datas = split(data.frame(data), g)        # split by $train, $test, and $valid (custom)
     Missings = split(data.frame(Missing), g)
+    if(is.null(datas$test)){
+      datas$test = datas$train; Missings$test = Missings$train
+    }
   }
 
   # probs_Missing = split(data.frame(prob_Missing),g)
@@ -135,6 +145,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
         impute_bs = bs[j] # batch_size in imputation same as batch_size in training
 
         print(paste("h:",h[i],", bs:",bs[j],", lr:",lr[k],", dim_z:",dim_z[l],", niw:",niws[m],", n_epochs: ",n_epochs[mm],", n_hls: ",n_hidden_layers[nn],", n_hls_r: ",n_hidden_layers_r[nr],", L1_weight: ", L1_weights[o1], ", L2_weight: ", L2_weights[o2], sep=""))
+        print(paste("M:", n_imputations))
 
         warm_started_model=NULL; warm_start=F
         # if(oo==1){warm_started_model = NULL; warm_start=F}else{warm_started_model = res_train$'saved_model'; warm_start=T}   # warm starts
@@ -152,7 +163,9 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
                         #add_miss_term=add_miss_term,#draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
                         pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=beta,beta_anneal_rate=beta_anneal_rate,
                         phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, train=1L,
-                        sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=5L, dir_name=dir_name, save_imps=F) #M=100L)
 
         res_valid = FUN(rdeponz=rdeponz, data=np$array(datas$valid),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$valid),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$valid),
                         covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
@@ -163,7 +176,9 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
                         #add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
                         pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=1,beta_anneal_rate=0,
                         phi0=phi0, phi=phi, warm_start=F, saved_model=res_train$'saved_model', train=0L,
-                        sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        # sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        # sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=5L, dir_name=dir_name, save_imps=F) #M=100L)
 
         # print("all_params")
         # print(res_valid$all_params)
@@ -197,19 +212,32 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
     saved_model = torch$load(sprintf("%s/temp_opt_train_saved_model.pth",dir_name))
 
     opt_params = opt_train$'train_params' #; saved_model = opt_train$'saved_model'
+
+    # batch_size = opt_params$'bs'   # runs out of memory: taking more samples --> need smaller batch size
+    test_bs = 500L
+    opt_params$'test_bs' = test_bs
+
+    # assuming niws is not tuned. use user-custom L and M (niw in training/validation time set to 5 for computational efficiency)
+    #opt_params$'niw'=niws[1]
+    opt_params$'L'= niws[1]; opt_params$'M' = n_imputations
     res_test = FUN(rdeponz=rdeponz, data=np$array(datas$test),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$test),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$test),
                    covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
                    L1_weight=opt_params$'L1_weight',L2_weight=opt_params$'L2_weight', ignorable=ignorable, n_hidden_layers=opt_params$'n_hidden_layers', n_hidden_layers_r=opt_params$'n_hidden_layers_r',
-                   sparse=sparse, dropout_pct=dropout_pct,prune_pct=NULL,covars_miss=NULL,covars_miss_val=NULL,impute_bs=opt_params$'bs',
+                   sparse=sparse, dropout_pct=dropout_pct,prune_pct=NULL,covars_miss=NULL,covars_miss_val=NULL,impute_bs=test_bs,
                    arch=arch, draw_xmiss=draw_xmiss,
                    #add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
                    pre_impute_value=pre_impute_value,h1=opt_params$'h1',h2=opt_params$'h2',h3=opt_params$'h3',h4=opt_params$'h4',#beta=1,beta_anneal_rate=0,
                    phi0=phi0, phi=phi, warm_start=F, saved_model=saved_model, train=0L,
-                   sigma=opt_params$'sigma',bs = opt_params$'bs', n_epochs = test_epochs,lr=opt_params$'lr',niw=opt_params$'niw',dim_z=opt_params$'dim_z',L=opt_params$'L', M=opt_params$'M', dir_name=dir_name, save_imps=save_imps)
+                   sigma=opt_params$'sigma',bs = test_bs, n_epochs = test_epochs,lr=opt_params$'lr',niw=opt_params$'niw',dim_z=opt_params$'dim_z',L=opt_params$'L', M=opt_params$'M', dir_name=dir_name, save_imps=save_imps)
 
     print(c(opt_params$'h1', opt_params$'bs', opt_params$'lr', opt_params$'dim_z', opt_params$'niw',
             opt_params$'n_hidden_layers', opt_params$'n_hidden_layers_r', opt_params$'L1_weight', opt_params$'L2_weight',
             res_test$'LB'))
+
+    print("dim(datas$test):")
+    print(dim(datas$test))
+    print("dim(res_test$xhat)")
+    print(dim(res_test$xhat))
 
     res_test$opt_params=opt_params
 
@@ -218,6 +246,8 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
     # res_test$xhat_rev = reverse_norm_MIWAE(res_test$xhat,norm_means,norm_sds)
     res_test$xhat_rev = res_test$xhat   # reverse normalization done inside Python
     res_test$LBs_trainVal = LBs_trainVal
+
+    res_test$g = g
 
     return(res_test)
   } else if(grepl("run_MIWAE",as.character(FUN))){
@@ -275,6 +305,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
 
     res_test$xhat_rev = reverse_norm_MIWAE(res_test$xhat,norm_means,norm_sds) # reverse normalization for proper comparison
 
+    res_test$g = g
     return(res_test)
   } else if(grepl("run_HIVAE",as.character(FUN))){
     #bss=min(nrow(datas$train),200000L)
@@ -331,6 +362,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
 
     res_test$opt_params=opt_params
 
+    res_test$g = g
     return(res_test)
   } else if(grepl("run_VAEAC",as.character(FUN))){
     ############################# VAEAC
@@ -388,11 +420,13 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
                    validation_iwae_n_samples=opt_params$'validation_iwae_n_samples',restore=TRUE)
     res_test$opt_params=opt_params
 
+    res_test$g = g
     return(res_test)
   } else if(grepl("run_missForest",as.character(FUN)) | grepl("run_meanImputation",as.character(FUN))){
     res = FUN(data=datas$test, Missing=Missings$test)
     xhat = if(grepl("run_missForest",as.character(FUN))){res$xhat_mf}else{res$xhat_mean}
     res$xhat_rev = reverse_norm_MIWAE(xhat,norm_means,norm_sds)
+    res$g = g
     return(res)
   }
 }

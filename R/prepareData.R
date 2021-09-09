@@ -1,13 +1,14 @@
 
-split_data = function(data, ratio=c(6,2,2), seed=333){
-  # splits the data into training-validation-test sets. Default = 6-2-2
+split_data = function(data, ratio=c(8,2), seed=333){
+  # splits the data into training-validation-test sets. Default = 8-2-0 --> test is train set
   # output g is the partition that can be used to split data and Missing (and probMissing optionally).
   ratio = ratio/sum(ratio) # if ratio doesn't sum to 1
   set.seed(333)
   g = sample(cut(
     seq(nrow(data)),
     nrow(data)*cumsum(c(0,ratio)),
-    labels = c("train","valid","test")
+    # labels = c("train","valid","test")
+    labels = c("train","valid")
   ))
   return(g)
 }
@@ -30,7 +31,7 @@ split_data = function(data, ratio=c(6,2,2), seed=333){
 #' @references \url{https://github.com/DavidKLim/NIMIWAE}
 #'
 #' @export
-simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(6,2,2), g_seed = 333,
+simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g_seed = 333,
                          beta=c(rep(-1,floor(P/2)), rep(1, P-floor(P/2)))){
   # simulate data by simulating D-dimensional Z latent variable for N observations
   # and then apply W and B (both drawn from N(0,1)) weights and biases to obtain X
