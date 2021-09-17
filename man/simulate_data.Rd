@@ -10,8 +10,10 @@ simulate_data(
   P,
   sim_index,
   seed = 9 * sim_index,
-  ratio = c(6, 2, 2),
-  g_seed = 333
+  ratio = c(8, 2),
+  g_seed = 333,
+  beta = c(rep(-1/4, floor(P/2)), rep(1/4, P - floor(P/2))),
+  nonlinear = F
 )
 }
 \arguments{
@@ -28,6 +30,8 @@ simulate_data(
 \item{ratio}{Train-valid-test ratio for splitting of observations}
 
 \item{g_seed}{Seed for train-valid-test dataset splitting of observations}
+
+\item{beta}{coefficients for each column of X in simulating a binary class response variable}
 }
 \value{
 list of objects: data (N x P matrix), classes (subgroups of observations), params (those used for simulating data), and g (partitioning of data into train-valid-test sets)

@@ -22,7 +22,7 @@ License: GPL-3
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.1
-Imports: reticulate, mice, ggplot2, lubridate, gdata
+Imports: reticulate, mice, ggplot2, lubridate, gdata, qrnn
 Author: David Lim [aut, cre] (<https://orcid.org/0000-0001-6403-4849>)
 Maintainer: David Lim <deelim@live.unc.edu>
 URL: https://github.com/DavidKLim/NIMIWAE

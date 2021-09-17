@@ -6,9 +6,10 @@
 \usage{
 NIMIWAE(
   data,
+  dataset,
   data_types,
   Missing,
-  g,
+  g = NULL,
   rdeponz = F,
   learn_r = T,
   phi0 = NULL,
@@ -16,11 +17,14 @@ NIMIWAE(
   ignorable = F,
   covars_r = rep(1, ncol(data)),
   arch = "IWAE",
-  draw_xmiss = F,
-  hyperparameters = list(sigma = "elu", h = c(128L, 64L), n_hidden_layers = c(1L, 2L),
-    n_hidden_layers_r = 0L, bs = c(1000L), lr = c(0.001, 0.01), dim_z =
+  draw_xmiss = T,
+  hyperparameters = list(sigma = "elu", h = c(64L), n_hidden_layers = c(1L, 2L),
+    n_hidden_layers_r0 = c(0L, 1L), bs = c(1000L), lr = c(0.001, 0.01), dim_z =
     as.integer(c(floor(ncol(data)/2), floor(ncol(data)/4))), niw = 5L, n_imputations =
-    5L, n_epochs = 2002L)
+    5L, n_epochs = 2002L),
+  save_imps = F,
+  dir_name = ".",
+  normalize = T
 )
 }
 \arguments{
@@ -46,7 +50,7 @@ NIMIWAE(
 
 \item{arch}{Architecture of NIMIWAE. Can be "IWAE" or "VAE". "VAE" is specific case of the "IWAE" where only one sample is drawn from the joint posterior of (z, xm).}
 
-\item{hyperparameters}{List of grid of hyperparameter values to search. Relevant hyperparameters: `sigma`: activation function ("relu" or "elu"), `h`: number of nodes per hidden layer, `n_hidden_layers`: #hidden layers (except missingness model Decoder_r), `n_hidden_layers_r`: #hidden layers in missingness model (Decoder_r), `bs`: batch size, `lr`: learning rate, `dim_z`: dimensionality of latent z, `niw`: number of importance weights (samples drawn from each latent space), `n_imputations`, `n_epochs`: maximum number of epochs}
+\item{hyperparameters}{List of grid of hyperparameter values to search. Relevant hyperparameters: `sigma`: activation function ("relu" or "elu"), `h`: number of nodes per hidden layer, `n_hidden_layers`: #hidden layers (except missingness model Decoder_r), `n_hidden_layers_r`: #hidden layers in missingness model (Decoder_r). If "NULL" then set as the same value as each n_hidden_layers (not tuned). Otherwise, can tune a different grid of values; `bs`: batch size, `lr`: learning rate, `dim_z`: dimensionality of latent z, `niw`: number of importance weights (samples drawn from each latent space), `n_imputations`, `n_epochs`: maximum number of epochs}
 }
 \value{
 res object: NIMIWAE fit containing ... on the test set

@@ -21,11 +21,11 @@ tuneHyperparams(
   ignorable = F,
   covars_r = rep(1, ncol(data)),
   arch = "IWAE",
-  draw_xmiss = F,
+  draw_xmiss = T,
   sigma = "elu",
   h = c(128L, 64L),
   n_hidden_layers = c(1L, 2L),
-  n_hidden_layers_r = 0L,
+  n_hidden_layers_r0 = NULL,
   bs = 1000L,
   lr = c(0.001, 0.01),
   dim_z = as.integer(c(floor(ncol(data)/2), floor(ncol(data)/4))),
@@ -35,7 +35,10 @@ tuneHyperparams(
   data_types_HIVAE = NULL,
   one_hot_max_sizes = NULL,
   ohms = NULL,
-  MissingDatas = NULL
+  MissingDatas = NULL,
+  save_imps = F,
+  dir_name = ".",
+  normalize = T
 )
 }
 \arguments{
@@ -73,8 +76,6 @@ tuneHyperparams(
 
 \item{n_hidden_layers}{integer, #hidden layers (except missingness model Decoder_r)}
 
-\item{n_hidden_layers_r}{integer, #hidden layers for Decoder_r (default: 0)}
-
 \item{bs}{integer, batch size (training)}
 
 \item{lr}{float, learning rate}
@@ -88,6 +89,8 @@ tuneHyperparams(
 \item{ohms}{Specify for VAEAC only.}
 
 \item{MissingDatas}{Specify for VAEAC only.}
+
+\item{n_hidden_layers_r}{integer, #hidden layers for Decoder_r (default: 0)}
 
 \item{niw}{integer, number of importance weights (samples drawn from each latent space). Default: 5}
 
