@@ -30,9 +30,11 @@ split_data = function(data, ratio=c(8,2), seed=333){
 #' @author David K. Lim, \email{deelim@live.unc.edu}
 #' @references \url{https://github.com/DavidKLim/NIMIWAE}
 #'
+#' @importFrom qrnn elu
+#'
 #' @export
 simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g_seed = 333,
-                         beta=c(rep(-1,floor(P/2)), rep(1, P-floor(P/2)))){
+                         beta=c(rep(-1/4,floor(P/2)), rep(1/4, P-floor(P/2))), nonlinear=F){
   # simulate data by simulating D-dimensional Z latent variable for N observations
   # and then apply W and B (both drawn from N(0,1)) weights and biases to obtain X
   set.seed(seed)
@@ -40,15 +42,41 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
   for(d in 1:D){
     Z[,d]=rnorm(N,mean=0,sd=1)
   }
-  W = matrix(nrow=D,ncol=P) # weights
-  B = matrix(nrow=N,ncol=P) # biases
-  for(p in 1:P){
-    W[,p]=rnorm(D,mean=0,sd=1)
-    B[,p]=rnorm(N,mean=0,sd=1)
+  # print("HELLO???")
+  # print(nonlinear)
+  # print("HELLO")
+  if(nonlinear){
+    print("Nonlinear data generation")
+    H = 64
+    sd1 = 1/4; sd2 = 1/4
+    W1 = matrix(rnorm(D*H,mean=0,sd=sd1),nrow=D,ncol=H) # weights
+    # W2 = matrix(rnorm(H*H,mean=0,sd=sd2),nrow=H,ncol=H)
+    W2 = matrix(rnorm(H*P,mean=0,sd=sd1),nrow=H,ncol=P)
+    B1 = matrix(rnorm(N*H,mean=0,sd=sd2),nrow=N,ncol=H,byrow=T) # biases: same for each obs
+    # B2 = matrix(rnorm(N*H,mean=0,sd=sd2),nrow=N,ncol=H,byrow=T)
+    B2 = matrix(rnorm(N*P,mean=0,sd=sd2),nrow=N,ncol=P,byrow=T)
+
+    # W0 = matrix(rnorm(D*P,mean=0,sd=sd2),nrow=D,ncol=P)
+    # B0 = matrix(rnorm(N*P,mean=0,sd=sd3),nrow=N,ncol=P,byrow=T)
+
+    # library(qrnn) # import "elu" function
+    X = qrnn::elu(Z%*%W1 + B1) %*% W2 + B2  # mimicking 1 HL with elu activation functions -- > NxP matrix
+    sds=list(sd1=sd1,sd2=sd2); W=list(W1=W2,W2=W2); B=list(B1=B1,B2=B2)
+  }else{
+    print("Linear data generation")
+    H=NA
+    W = matrix(nrow=D,ncol=P) # weights
+    B = matrix(nrow=N,ncol=P) # biases
+    for(p in 1:P){
+      W[,p]=rnorm(D,mean=0,sd=1)
+      B[,p]=rnorm(N,mean=0,sd=1)
+    }
+    X = Z%*%W + B
+    sds=list()
   }
-  X = Z%*%W + B
-  data = X
   # classes=rep(1,N)  # let's make this our response variable
+
+  params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed, sds=sds)
 
   find_int = function(p,beta) {
     # Define a path through parameter space
@@ -71,11 +99,10 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
   mod = beta0 + X%*%beta
 
   probs = inv_logit(mod)
-  classes = rbinom(n,1,probs)
+  classes = rbinom(N,1,probs)
 
 
-
-  params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, beta0=beta0, beta=beta, probs=probs, seed=seed)
+  params=list(N=N, D=D, P=P, Z=Z, H=H, W=W, B=B, beta0=beta0, beta=beta, probs=probs, seed=seed)
 
   # ## simulate clustered data?
   # if(dataset=="TOYZ_CLUSTER"){
@@ -101,8 +128,8 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
   # }
 
   set.seed(g_seed)
-  g = split_data(data=data, ratio=ratio)
-  return(list(data=data, classes=classes, params=params, g=g))
+  g = split_data(data=X, ratio=ratio)
+  return(list(data=X, classes=classes, params=params, g=g))
 }
 
 
@@ -348,6 +375,17 @@ simulate_missing = function(data,miss_cols,ref_cols,pi,
         if(any(ref_cols %in% miss_cols)){stop(sprintf("missing cols in reference. is this intended? this is MNAR not MAR."))}
         x <- matrix(data[,ref_cols],ncol=length(ref_cols)) # missingness dep on all ref columns
         phi=phis[ref_cols]
+      }else if(scheme=="NL"){
+        ## Nonlinear
+        ## if(any(is.na(data[,1:3]))){stop("Missingness in 1st 3 cols of data used for nonlinear MAR interactions")}
+        ## x = cbind(data[,1]*data[,2], data[,2]*data[,3], data[,1]*data[,2]*data[,3])  # 3 nonlinear predictors (observed)
+        ## beta = betas[1:3]/colMeans(x)  # scale effect of each nonlinear term by mean --> scale down effect of large predictors
+        # x <- matrix(log(data[,ref_cols[j]] + abs(min(data[,ref_cols[j]])) + 0.01),ncol=1) # just the corresponding ref column
+        x <- matrix((data[,ref_cols[j]])^2,ncol=1) # just the corresponding ref column
+        beta=betas[miss_cols[j]]
+        # jj = if(j>1){j-1}else{jj=length(ref_cols)}
+        # x <- cbind(exp(data[,ref_cols[j]]), (data[,ref_cols[jj]])^2, data[,ref_cols[jj]]*data[,ref_cols[j]]) # just the corresponding ref column
+        # beta = rep(betas[ref_cols[j]], 3)
       }
     }else if(mechanism=="MNAR"){
       if(fmodel=="S"){
@@ -363,6 +401,19 @@ simulate_missing = function(data,miss_cols,ref_cols,pi,
           phi=phis[ref_cols]         # in MNAR --> ref_cols can overlap with miss_cols (dependent on missingness)
 
           # address when miss_cols/ref_cols/phis are not null (i.e. want to induce missingness on col 2 & 5 based on cols 1, 3, & 4)
+        }else if(scheme=="NL"){
+          # ## Nonlinear
+          # # x = cbind(data[,1]*data[,2], data[,2]*data[,3], data[,1]*data[,2]*data[,3], log(data[,4]), exp(data[,5]))  # 5 nonlinear predictors
+          # # x = cbind(data[,1]*data[,2], data[,2]*data[,3], data[,1]*data[,2]*data[,3])  # 3 nonlinear predictors
+          # x = cbind(data[,1], data[,1]*data[,2], data[,3]^2)  # 3 nonlinear predictors
+          # # beta = betas[1:5]/colMeans(x)  # scale effect of each nonlinear term by mean --> scale down effect of large predictors
+          # # beta = betas[1:3]/colMeans(x)  # scale effect of each nonlinear term by mean --> scale down effect of large predictors
+          # beta = betas[1:3]  # scale effect of each nonlinear term by mean --> scale down effect of large predictors
+          x <- matrix((data[,miss_cols[j]])^2,ncol=1) # just the corresponding ref column
+          beta=betas[miss_cols[j]]
+          # jj = if(j>1){j-1}else{jj=length(miss_cols)}
+          # x <- cbind(exp(data[,miss_cols[j]]), (data[,miss_cols[jj]])^2, data[,miss_cols[jj]]*data[,miss_cols[j]]) # just the corresponding ref column
+          # beta = rep(betas[miss_cols[j]], 3)
         }
       } else if(fmodel=="PM"){
         x <- Z
