@@ -128,6 +128,8 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
     # sparse="L1"; L1_weights=c(0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5); L2_weight=4e-3; dropout_pct=NULL  # D5: Weight decay of 4e-3: https://dejanbatanjac.github.io/2019/07/02/Impact-of-WD.html, https://arxiv.org/pdf/1803.09820.pdf
     # dim_zs = c(64L,128L)    # D6: way overparametrized Z
 
+    if(ignorable){n_hidden_layers_r0=0L}  # no need to tune this parameter if ignorable model..
+
     if(is.null(n_hidden_layers_r0)){ n_hidden_layers_r = 999L # dummy set it to 999. replace in for loop with value of n_hidden_layers
     } else{n_hidden_layers_r = n_hidden_layers_r0}   # if not null, set to specified value(s)
 
@@ -154,6 +156,9 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
         if(is.null(n_hidden_layers_r0)){ n_hidden_layers_r = n_hidden_layers[nn] }   # n_hidden_layers for R is same as other NNs
         # n_hidden_layers_r = 0L
 
+        # niw = 5L
+        niw = 25L
+        # niw = 1L   # trying this test
         res_train = FUN(rdeponz=rdeponz, data=np$array(datas$train),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$train),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$train),
                         covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
                         ignorable=ignorable,n_hidden_layers=n_hidden_layers[nn], n_hidden_layers_r=n_hidden_layers_r[nr],
@@ -164,7 +169,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
                         pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=beta,beta_anneal_rate=beta_anneal_rate,
                         phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, train=1L,
                         # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
-                        sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niw, dim_z=dim_z[l], L=niw, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
                         # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=5L, dir_name=dir_name, save_imps=F) #M=100L)
 
         res_valid = FUN(rdeponz=rdeponz, data=np$array(datas$valid),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$valid),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$valid),
@@ -177,7 +182,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
                         pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=1,beta_anneal_rate=0,
                         phi0=phi0, phi=phi, warm_start=F, saved_model=res_train$'saved_model', train=0L,
                         # sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
-                        sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niw, dim_z=dim_z[l], L=niw, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
                         # sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=5L, dir_name=dir_name, save_imps=F) #M=100L)
 
         # print("all_params")

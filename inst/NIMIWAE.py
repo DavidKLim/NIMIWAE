@@ -233,22 +233,28 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       decoders['cat'].append( network_maker(act_fun, n_hidden_layers, d, h2, int(Cs[ii]), True, False).cuda() )
       # decoders['cat'].append( network_maker(act_fun, n_hidden_layers, d+p, h2, int(Cs[ii]), True, False).cuda() )
     
-  # decoder_x = network_maker(act_fun, n_hidden_layers, d, h2, 2*p, True, False)
+  if ignorable: p2=p+d         # if ignorable, only feed xo and z into q(xm|xo,z), since xm indep of r
+  else: p2=p+p+d
+  
+  print("p2:")
+  print(p2)
+  print("ignorable:")
+  print(ignorable)
+  
+  # encoder_xr = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p, True, False)
+  encoders_xr = {}
+  if exists_types[0]:
+    encoders_xr['real'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_real, True, False).cuda()
+  if exists_types[1]:
+    encoders_xr['count'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_count, True, False).cuda()
+  if exists_types[2]:
+    encoders_xr['pos'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_pos, True, False).cuda()
+  if exists_types[3]:
+    encoders_xr['cat'] = []
+    for ii in range(0,p_cat):
+      encoders_xr['cat'].append(network_maker(act_fun, n_hidden_layers, p2, h4, int(Cs[ii]), True, False).cuda())
+  
   if not ignorable:
-    p2=p+p+d
-    # encoder_xr = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p, True, False)
-    encoders_xr = {}
-    if exists_types[0]:
-      encoders_xr['real'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_real, True, False).cuda()
-    if exists_types[1]:
-      encoders_xr['count'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_count, True, False).cuda()
-    if exists_types[2]:
-      encoders_xr['pos'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_pos, True, False).cuda()
-    if exists_types[3]:
-      encoders_xr['cat'] = []
-      for ii in range(0,p_cat):
-        encoders_xr['cat'].append(network_maker(act_fun, n_hidden_layers, p2, h4, int(Cs[ii]), True, False).cuda())
-
     # pr: number of features of data included as covariates in Decoder 2
     # pr1: number of additional covariates (like class) included as covariates in Decoder 2
     if (rdeponz): num_dec_r_params = pr + pr1 + d
@@ -311,88 +317,59 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     xm_flat = torch.ones([M*niw*batch_size,p]).cuda()
     xogivenz_flat = tiled_tiled_iota_x*tiledtiledmask
     
-    if not ignorable:
-      ########## NEED TO SAMPLE M TIMES ############
-      # xgivenz = pxgivenz.rsample([M]) # samples all observed/missing features. sampling once for each of the niw samples of z
-      # xgivenz_flat_draw = xgivenz.reshape([M*niw*batch_size,p])    # (M)*(#iws)*(#bs) x (#features). each iw sample is stacked on top of each other
-      # if (not draw_xobs): xogivenz_flat = tiled_tiled_iota_x*tiledtiledmask # default. why would you draw observed values from p(x|z)?? maybe code out draw_xobs
-      # else: xogivenz_flat = xgivenz_flat_draw*tiledtiledmask
+    ########## NEED TO SAMPLE M TIMES ############
+    
+    ## encoder_xr ##      p(xm|z,r)
+    # out_encoder_xr = encoder_xr(torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))  # samp_r may be pr or r when Gibbs
+    out_encoders_xr = {}; out_encoders_xr['cat'] = []; q_xs={}; q_xs['cat'] = []
+    params_xr={}; params_xr['cat']=[]
+    if exists_types[0]:
+      if ignorable:out_encoders_xr['real'] = encoders_xr['real'](torch.cat([tiled_iota_x,zgivenx_flat],1))
+      else: out_encoders_xr['real'] = encoders_xr['real'](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))
+      q_xs['real'] = td.Normal(loc=out_encoders_xr['real'][..., :p_real], scale=torch.nn.Softplus()(out_encoders_xr['real'][..., p_real:(2*p_real)]) + 0.001)
+      # params_xr['real'] = {'mean': torch.mean(out_encoders_xr['real'][..., :p_real].reshape([niw,batch_size,p_real]),0).detach().cpu().data.numpy(), 'scale': torch.mean(torch.nn.Softplus()(out_encoders_xr['real'][..., p_real:(2*p_real)]).reshape([niw,batch_size,p_real]),0).detach().cpu().data.numpy() + 0.001}
+      params_xr['real'] = {'mean': out_encoders_xr['real'][..., :p_real].reshape([niw,batch_size,p_real]).detach().cpu().data.numpy(), 'scale': torch.nn.Softplus()(out_encoders_xr['real'][..., p_real:(2*p_real)]).reshape([niw,batch_size,p_real]).detach().cpu().data.numpy() + 0.001}
+    if exists_types[1]:
+      if ignorable: out_encoders_xr['count'] = encoders_xr['count'](torch.cat([tiled_iota_x,zgivenx_flat],1))
+      else: out_encoders_xr['count'] = encoders_xr['count'](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))
+      q_xs['count'] = td.Normal(loc=out_encoders_xr['count'][..., :p_count], scale=torch.nn.Softplus()(out_encoders_xr['real'][..., p_count:(2*p_count)]) + 0.001)
+      # params_xr['count'] = {'mean': torch.mean(out_encoders_xr['count'][..., :p_count].reshape([niw,batch_size,p_count]),0).detach().cpu().data.numpy(), 'scale': torch.mean(torch.nn.Softplus()(out_encoders_xr['count'][..., p_count:(2*p_count)]).reshape([niw,batch_size,p_count]),0).detach().cpu().data.numpy() + 0.001}
+      params_xr['count'] = {'mean': out_encoders_xr['count'][..., :p_count].reshape([niw,batch_size,p_count]).detach().cpu().data.numpy(), 'scale': torch.nn.Softplus()(out_encoders_xr['count'][..., p_count:(2*p_count)]).reshape([niw,batch_size,p_count]).detach().cpu().data.numpy() + 0.001}
+    if exists_types[2]:
+      if ignorable: out_encoders_xr['pos'] = encoders_xr['pos'](torch.cat([tiled_iota_x,zgivenx_flat],1))
+      else: out_encoders_xr['pos'] = encoders_xr['pos'](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))
+      q_xs['pos'] = td.LogNormal(loc=out_encoders_xr['pos'][..., :p_pos], scale=torch.nn.Softplus()(out_encoders_xr['pos'][..., p_pos:(2*p_pos)]) + 0.001)
+      # params_xr['pos'] = {'mean': torch.mean(out_encoders_xr['pos'][..., :p_pos].reshape([niw,batch_size,p_pos]),0).detach().cpu().data.numpy(), 'scale': torch.mean(torch.nn.Softplus()(out_encoders_xr['pos'][..., p_pos:(2*p_pos)]).reshape([niw,batch_size,p_pos]),0).detach().cpu().data.numpy() + 0.001}
+      params_xr['pos'] = {'mean': out_encoders_xr['pos'][..., :p_pos].reshape([niw,batch_size,p_pos]).detach().cpu().data.numpy(), 'scale': torch.nn.Softplus()(out_encoders_xr['pos'][..., p_pos:(2*p_pos)]).reshape([niw,batch_size,p_pos]).detach().cpu().data.numpy() + 0.001}
+    if exists_types[3]:
+      for ii in range(0,p_cat):
+        if ignorable: out_encoders_xr['cat'].append( torch.clamp(torch.nn.Softmax(dim=1)(encoders_xr['cat'][ii](torch.cat([tiled_iota_x,zgivenx_flat],1))), min=0.0001, max=0.9999) )
+        else: out_encoders_xr['cat'].append( torch.clamp(torch.nn.Softmax(dim=1)(encoders_xr['cat'][ii](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))), min=0.0001, max=0.9999) )
+        q_xs['cat'].append(td.RelaxedOneHotCategorical(temperature=temp, probs=out_encoders_xr['cat'][ii]))
+        params_xr['cat'].append(out_encoders_xr['cat'][ii].reshape([niw,batch_size,-1]).detach().cpu().data.numpy())
+        
       
-      
-      ## encoder_xr ##      p(xm|z,r)
-      # out_encoder_xr = encoder_xr(torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))  # samp_r may be pr or r when Gibbs
-      out_encoders_xr = {}; out_encoders_xr['cat'] = []; q_xs={}; q_xs['cat'] = []
-      params_xr={}; params_xr['cat']=[]
-      if exists_types[0]:
-        out_encoders_xr['real'] = encoders_xr['real'](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))
-        q_xs['real'] = td.Normal(loc=out_encoders_xr['real'][..., :p_real], scale=torch.nn.Softplus()(out_encoders_xr['real'][..., p_real:(2*p_real)]) + 0.001)
-        # params_xr['real'] = {'mean': torch.mean(out_encoders_xr['real'][..., :p_real].reshape([niw,batch_size,p_real]),0).detach().cpu().data.numpy(), 'scale': torch.mean(torch.nn.Softplus()(out_encoders_xr['real'][..., p_real:(2*p_real)]).reshape([niw,batch_size,p_real]),0).detach().cpu().data.numpy() + 0.001}
-        params_xr['real'] = {'mean': out_encoders_xr['real'][..., :p_real].reshape([niw,batch_size,p_real]).detach().cpu().data.numpy(), 'scale': torch.nn.Softplus()(out_encoders_xr['real'][..., p_real:(2*p_real)]).reshape([niw,batch_size,p_real]).detach().cpu().data.numpy() + 0.001}
-      if exists_types[1]:
-        out_encoders_xr['count'] = encoders_xr['count'](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))
-        q_xs['count'] = td.Normal(loc=out_encoders_xr['count'][..., :p_count], scale=torch.nn.Softplus()(out_encoders_xr['real'][..., p_count:(2*p_count)]) + 0.001)
-        # params_xr['count'] = {'mean': torch.mean(out_encoders_xr['count'][..., :p_count].reshape([niw,batch_size,p_count]),0).detach().cpu().data.numpy(), 'scale': torch.mean(torch.nn.Softplus()(out_encoders_xr['count'][..., p_count:(2*p_count)]).reshape([niw,batch_size,p_count]),0).detach().cpu().data.numpy() + 0.001}
-        params_xr['count'] = {'mean': out_encoders_xr['count'][..., :p_count].reshape([niw,batch_size,p_count]).detach().cpu().data.numpy(), 'scale': torch.nn.Softplus()(out_encoders_xr['count'][..., p_count:(2*p_count)]).reshape([niw,batch_size,p_count]).detach().cpu().data.numpy() + 0.001}
-      if exists_types[2]:
-        out_encoders_xr['pos'] = encoders_xr['pos'](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))
-        q_xs['pos'] = td.LogNormal(loc=out_encoders_xr['pos'][..., :p_pos], scale=torch.nn.Softplus()(out_encoders_xr['pos'][..., p_pos:(2*p_pos)]) + 0.001)
-        # params_xr['pos'] = {'mean': torch.mean(out_encoders_xr['pos'][..., :p_pos].reshape([niw,batch_size,p_pos]),0).detach().cpu().data.numpy(), 'scale': torch.mean(torch.nn.Softplus()(out_encoders_xr['pos'][..., p_pos:(2*p_pos)]).reshape([niw,batch_size,p_pos]),0).detach().cpu().data.numpy() + 0.001}
-        params_xr['pos'] = {'mean': out_encoders_xr['pos'][..., :p_pos].reshape([niw,batch_size,p_pos]).detach().cpu().data.numpy(), 'scale': torch.nn.Softplus()(out_encoders_xr['pos'][..., p_pos:(2*p_pos)]).reshape([niw,batch_size,p_pos]).detach().cpu().data.numpy() + 0.001}
+    # if draw_xmiss, draw missing values from q(xm|...)
+    if draw_xmiss:
+      # print(ids_real)
+      # print(q_xs['real'].rsample([M]).shape)
+      if exists_types[0]: xm_flat[:,ids_real] = q_xs['real'].rsample([M]).reshape([M*niw*batch_size,-1])
+      if exists_types[1]: xm_flat[:,ids_count] = q_xs['count'].rsample([M]).reshape([M*niw*batch_size,-1])
+      if exists_types[2]: xm_flat[:,ids_pos] = q_xs['pos'].rsample([M]).reshape([M*niw*batch_size,-1])
       if exists_types[3]:
         for ii in range(0,p_cat):
-          out_encoders_xr['cat'].append( torch.clamp(torch.nn.Softmax(dim=1)(encoders_xr['cat'][ii](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))), min=0.0001, max=0.9999) )
-          # print("encoders_xr['cat']["+str(ii)+"]")
-          # print(encoders_xr['cat'][ii](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1))[:10])
-          # print("Softmax(dim=1)")
-          # print(torch.nn.Softmax(dim=1)(encoders_xr['cat'][ii](torch.cat([tiled_iota_x,zgivenx_flat,tiledmask],1)))[:10])
-          
-          q_xs['cat'].append(td.RelaxedOneHotCategorical(temperature=temp, probs=out_encoders_xr['cat'][ii]))
-          # q_xs['cat'].append(td.OneHotCategorical(probs=out_encoders_xr['cat'][ii]))
-          # params_xr['cat'].append(torch.mean(out_encoders_xr['cat'][ii].reshape([niw,batch_size,-1]),0).detach().cpu().data.numpy())
-          params_xr['cat'].append(out_encoders_xr['cat'][ii].reshape([niw,batch_size,-1]).detach().cpu().data.numpy())
-          
-      # sys.exit("stop here")
-      
-      
-      
-      # if draw_xmiss, draw missing values from q(xm|...)
-      if draw_xmiss:
-        # print(ids_real)
-        # print(q_xs['real'].rsample([M]).shape)
-        if exists_types[0]: xm_flat[:,ids_real] = q_xs['real'].rsample([M]).reshape([M*niw*batch_size,-1])
-        if exists_types[1]: xm_flat[:,ids_count] = q_xs['count'].rsample([M]).reshape([M*niw*batch_size,-1])
-        if exists_types[2]: xm_flat[:,ids_pos] = q_xs['pos'].rsample([M]).reshape([M*niw*batch_size,-1])
-        if exists_types[3]:
-          for ii in range(0,p_cat):
-            if ii==0: C0=0; C1=int(Cs[ii])
-            else: C0=C1; C1=C0+int(Cs[ii])
-            xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = q_xs['cat'][ii].rsample([M]).reshape([M*niw*batch_size, int(Cs[ii])])
-            # xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = q_xs['cat'][ii].sample([M]).reshape([M*niw*batch_size,-1])
-            # xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = torch.Tensor.repeat(out_encoders_xr['cat'][ii], [M,1]).reshape([M*niw*batch_size,-1])  # just passing softmax probs
-            
-  
-        #     print("feature " + str(p_real+p_count+p_pos+C0))
-        #     print(xm_flat[:, (p_real+p_count+p_pos+C0)])
-        #     print("feature " + str(p_real+p_count+p_pos+C0+1))
-        #     print(xm_flat[:, (p_real+p_count+p_pos+C0+1)])
-        #     print("feature " + str(p_real+p_count+p_pos+C0+2))
-        #     print(xm_flat[:, (p_real+p_count+p_pos+C0+2)])
-        # sys.exit("stop here")
-  
-        xmgivenz_flat = xm_flat*(1-tiledtiledmask)
-        xincluded = xogivenz_flat + xmgivenz_flat
-        xincluded[:,ids_cat] = torch.clamp(xincluded[:,ids_cat], min=0.0001, max=0.9999)
-      else:
-        xincluded = tiled_tiled_iota_xfull
-      # print(xincluded[:4])
-      # samp_x = torch.mean(torch.mean((xincluded).reshape([M,-1]),axis=0).reshape([niw,-1]),axis=0).reshape([batch_size,p]) # average out IW's
+          if ii==0: C0=0; C1=int(Cs[ii])
+          else: C0=C1; C1=C0+int(Cs[ii])
+          xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = q_xs['cat'][ii].rsample([M]).reshape([M*niw*batch_size, int(Cs[ii])])
+      xmgivenz_flat = xm_flat*(1-tiledtiledmask)
+      xincluded = xogivenz_flat + xmgivenz_flat
+      xincluded[:,ids_cat] = torch.clamp(xincluded[:,ids_cat], min=0.0001, max=0.9999)
+    else:
+      xincluded = tiled_tiled_iota_xfull
     
+    if not ignorable:  
       ## DECODER_R ##
       # p(r|x)
-      # if unnorm:  # not using this: messes with scaling
-      #   xincluded = ( xdraw_flat*(torch.from_numpy(norm_sds).float().cuda()) + (torch.from_numpy(norm_means).float().cuda()) )[:,covars_r==1]
-      # else:
-
       logits_Missing = torch.zeros(M*niw*batch_size, p0).cuda()
       if learn_r:
         if (not covars):
@@ -414,26 +391,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     
       p_rgivenx = td.Bernoulli(probs=prob_Missing)
     else:
-      p_rgivenx=None; q_xs=None;  params_xr=None; params_r=None
-      # if draw_xmiss, draw missing values from q(xm|...)
-      if draw_xmiss:
-        # print(ids_real)
-        # print(q_xs['real'].rsample([M]).shape)
-        if exists_types[0]: xm_flat[:,ids_real] = p_xs['real'].sample([M]).reshape([M*niw*batch_size,-1])
-        if exists_types[1]: xm_flat[:,ids_count] = p_xs['count'].sample([M]).reshape([M*niw*batch_size,-1])
-        if exists_types[2]: xm_flat[:,ids_pos] = p_xs['pos'].sample([M]).reshape([M*niw*batch_size,-1])
-        if exists_types[3]:
-          for ii in range(0,p_cat):
-            if ii==0: C0=0; C1=int(Cs[ii])
-            else: C0=C1; C1=C0+int(Cs[ii])
-            xm_flat[:, (p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)] = p_xs['cat'][ii].sample([M]).reshape([M*niw*batch_size,-1])
-
-  
-        xmgivenz_flat = xm_flat*(1-tiledtiledmask)
-        xincluded = xogivenz_flat + xmgivenz_flat
-        xincluded[:,ids_cat] = torch.clamp(xincluded[:,ids_cat], min=0.0001, max=0.9999)
-      else:
-        xincluded = tiled_tiled_iota_xfull
+      p_rgivenx=None; params_r=None
     
     ## OUTPUTS ##
     # if dec_distrib=="Normal":
@@ -461,6 +419,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     #mask[mask==1]=0.999; mask[mask==0]=0.001
     batch_size = iota_x.shape[0]
     tiledmask = torch.Tensor.repeat(mask,[K,1]).cuda()
+    tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
     tiled_iota_x = torch.Tensor.repeat(iota_x,[K,1]).cuda()
     #tiled_tiled_iota_x = torch.Tensor.repeat(tiled_iota_x,[M,1]).cuda()
     if (not draw_xmiss) and (not ignorable): tiled_iota_xfull = torch.Tensor.repeat(iota_xfull,[K,1]).cuda(); tiled_tiled_iota_xfull = torch.Tensor.repeat(tiled_iota_xfull,[M,1]).cuda()
@@ -482,104 +441,47 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     
     ## COMPUTE LOG PROBABILITIES ##
     if not ignorable:
-      tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
-      # all_logprgivenx = p_rgivenx.log_prob(tiledtiledmask)  # M*niw*bs x p
       tiledtiledmask0 = torch.Tensor.repeat(torch.Tensor.repeat(mask0,[K,1]),[M,1]).cuda()
       all_logprgivenx = p_rgivenx.log_prob(tiledtiledmask0)  # M*niw*bs x p0
-      # sum across p features --> M*niw*bs --> sum over M --> niw*bs
       logprgivenx = torch.sum(torch.sum(all_logprgivenx,1).reshape([M,K*batch_size]),0).reshape([K,batch_size])
       sum_logpr = np.sum(logprgivenx.cpu().data.numpy())
-
-      ## qxgivenzr: (niw*bs) x p, xgivenzr: M x (niw*bs) x p
-      # if add_miss_term:
-      #   logqxmissgivenzr = torch.sum((qxgivenzr.log_prob(tiled_tiled_iota_xfull.reshape([M,K*batch_size,p])).reshape([M*K*batch_size,p])*(1-tiledtiledmask)),axis=1).reshape([M,K*batch_size])   # check dimensions here
-      #   logpxmissgivenz = torch.sum((pxgivenz.log_prob(tiled_tiled_iota_xfull.reshape([M,K*batch_size,p])).reshape([M*K*batch_size,p])*(1-tiledtiledmask)),axis=1).reshape([M,K*batch_size])
-      # else:
-      #   logqxmissgivenzr = torch.sum((qxgivenzr.log_prob(xgivenzr).reshape([M*K*batch_size,p])*(1-tiledtiledmask)),axis=1).reshape([M,K*batch_size])   # check dimensions here
-      #   logpxmissgivenz = torch.sum((pxgivenz.log_prob(xgivenzr).reshape([M*K*batch_size,p])*(1-tiledtiledmask)),axis=1).reshape([M,K*batch_size])
-      
-      # logqxmissgivenzr = torch.sum((qxgivenzr.log_prob(xgivenzr).reshape([M*K*batch_size,p])*(1-tiledtiledmask)),axis=1).reshape([M,K,batch_size])
-      # logpxmissgivenz = torch.sum((pxgivenz.log_prob(xgivenzr).reshape([M*K*batch_size,p])*(1-tiledtiledmask)),axis=1).reshape([M,K,batch_size])
-      
-      logqxmissgivenzr = {}; logpxmissgivenz = {}
-      # can combine real, count, pos if we're continuing to treat them exactly the same (would save computation time)
-      if exists_types[0]:
-        logqxmissgivenzr['real'] = torch.sum(q_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,K*batch_size,p_real])).reshape([M*K*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,K*batch_size])
-        logpxmissgivenz['real'] = torch.sum(p_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,K*batch_size,p_real])).reshape([M*K*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,K*batch_size])
-      if exists_types[1]:
-        logqxmissgivenzr['count'] = torch.sum(q_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,K*batch_size,p_count])).reshape([M*K*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,K*batch_size])
-        logpxmissgivenz['count'] = torch.sum(p_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,K*batch_size,p_count])).reshape([M*K*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,K*batch_size])
-      if exists_types[2]:
-        logqxmissgivenzr['pos'] = torch.sum(q_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,K*batch_size,p_pos])).reshape([M*K*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,K*batch_size])
-        logpxmissgivenz['pos'] = torch.sum(p_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,K*batch_size,p_pos])).reshape([M*K*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,K*batch_size])
-      if exists_types[3]:
-        for ii in range(0,p_cat):
-          if ii==0: C0=0; C1=int(Cs[ii])
-          else: C0=C1; C1=C0+int(Cs[ii])
-          
-          logqxs = q_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1])).reshape([M*K*batch_size])
-          logpxs = p_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1])).reshape([M*K*batch_size])
-          if ii==0:
-            
-            logqxmissgivenzr['cat'] = (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size])
-            logpxmissgivenz['cat'] = (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size])
-          else:
-            logqxmissgivenzr['cat'] = logqxmissgivenzr['cat'] + (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size])
-            logpxmissgivenz['cat'] = logpxmissgivenz['cat'] + (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size])
-          # print("Cat" + str(ii))
-          # print("logqxs")
-          # print(logqxs)
-          # print(logqxs.shape)
-          # print("logpxs")
-          # print(logpxs)
-          # print(logpxs.shape)
-          # print("1-tiledtiledmask")
-          # print((1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)]))
-          # print("logqxs * (1-tiledtiledmask)")
-          # print(logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)]))
-          # print("logqxmissgivenzr cumulative")
-          # print(logqxmissgivenzr['cat'])
-          # print("logpxmissgivenz cumulative")
-          # print(logpxmissgivenz['cat'])
-          
-          
-      logpxmissgivenzsum = torch.zeros([M,K*batch_size]).cuda(); logqxmissgivenzrsum = torch.zeros([M,K*batch_size]).cuda()
-      if exists_types[0]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['real']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['real']
-      if exists_types[1]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['count']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['count']
-      if exists_types[2]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['pos']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['pos']
-      if exists_types[3]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['cat']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['cat']
-      
-      # print("logpxmissgivenzsum:")
-      # print(logpxmissgivenzsum)
-      # print("logqxmissgivenzrsum:")
-      # print(logqxmissgivenzrsum)
-      # KL2 = beta*torch.sum((logpxmissgivenz - logqxmissgivenzr),axis=0).reshape([K,batch_size])
-      KL2 = torch.sum((logpxmissgivenzsum - logqxmissgivenzrsum),axis=0).reshape([K,batch_size])
-      # if torch.sum(torch.isnan(KL2))>=0:
-      #   print("KL2 first 10 (cols: batch_size, rows: K)")
-      #   print(KL2[:,:10])
-      #   for ii in range(0,p_cat):
-      #     if ii==0: C0=0; C1=int(Cs[ii])
-      #     else: C0=C1; C1=C0+int(Cs[ii])
-      #     print("qxs cat" + str(ii))
-      #     print((q_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1])).reshape([M*K*batch_size])*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size]))
-      #     print("pxs cat" + str(ii))
-      #     print((p_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1])).reshape([M*K*batch_size])*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size]))
-      #     print("xincluded first 10, features " + str(p_real+p_count+p_pos+C0) + " to " + str(p_real+p_count+p_pos+C1))
-      #     print(xincluded[:10,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)])
-      #     print(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].shape)
-      #     print("xincluded reshaped first 10")
-      #     print(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1])[:10])
-      #     print("logprob(reshaped xincluded):")
-      #     print(p_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1]))[:10])
-      #     print(p_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1])).shape)
-          
-          
     else:
       # if ignorably missing, no p(r|x), no q(xm|z,r), and no p(xm|z)
       all_logprgivenx = torch.zeros([M*K*batch_size,p]).cuda(); logprgivenx=torch.zeros([1]).cuda(); sum_logpr=np.zeros(1)
-      logqxmissgivenzr=torch.zeros([1]).cuda(); logpxmissgivenz=torch.zeros([1]).cuda(); KL2=torch.zeros([1]).cuda()
-      logqxmissgivenzrsum=torch.zeros([1]).cuda(); logpxmissgivenzsum = torch.zeros([1]).cuda()
+    
+    logqxmissgivenzr = {}; logpxmissgivenz = {}
+    # can combine real, count, pos if we're continuing to treat them exactly the same (would save computation time)
+    if exists_types[0]:
+      logqxmissgivenzr['real'] = torch.sum(q_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,K*batch_size,p_real])).reshape([M*K*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,K*batch_size])
+      logpxmissgivenz['real'] = torch.sum(p_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,K*batch_size,p_real])).reshape([M*K*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,K*batch_size])
+    if exists_types[1]:
+      logqxmissgivenzr['count'] = torch.sum(q_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,K*batch_size,p_count])).reshape([M*K*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,K*batch_size])
+      logpxmissgivenz['count'] = torch.sum(p_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,K*batch_size,p_count])).reshape([M*K*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,K*batch_size])
+    if exists_types[2]:
+      logqxmissgivenzr['pos'] = torch.sum(q_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,K*batch_size,p_pos])).reshape([M*K*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,K*batch_size])
+      logpxmissgivenz['pos'] = torch.sum(p_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,K*batch_size,p_pos])).reshape([M*K*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,K*batch_size])
+    if exists_types[3]:
+      for ii in range(0,p_cat):
+        if ii==0: C0=0; C1=int(Cs[ii])
+        else: C0=C1; C1=C0+int(Cs[ii])
+        
+        logqxs = q_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1])).reshape([M*K*batch_size])
+        logpxs = p_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,K*batch_size,-1])).reshape([M*K*batch_size])
+        if ii==0:
+          
+          logqxmissgivenzr['cat'] = (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size])
+          logpxmissgivenz['cat'] = (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size])
+        else:
+          logqxmissgivenzr['cat'] = logqxmissgivenzr['cat'] + (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size])
+          logpxmissgivenz['cat'] = logpxmissgivenz['cat'] + (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,K*batch_size])
+        
+    logpxmissgivenzsum = torch.zeros([M,K*batch_size]).cuda(); logqxmissgivenzrsum = torch.zeros([M,K*batch_size]).cuda()
+    if exists_types[0]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['real']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['real']
+    if exists_types[1]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['count']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['count']
+    if exists_types[2]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['pos']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['pos']
+    if exists_types[3]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['cat']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['cat']
+    
+    KL2 = torch.sum((logpxmissgivenzsum - logqxmissgivenzrsum),axis=0).reshape([K,batch_size])
     
     
     # all_log_pxgivenz = pxgivenz.log_prob(tiled_iota_x)
@@ -614,6 +516,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     logqz = q_zgivenxobs.log_prob(zgivenx_flat.reshape([K,batch_size,d]))
     sum_logqz = np.sum(logqz.cpu().data.numpy())
     
+    # beta=1.2  # beta-VAE. should tune this too if i use this
     # KL = beta*torch.sum((logpz - logqz).reshape([K*batch_size,-1]),axis=1).reshape([K,batch_size])    # actually (-KL)
     KL = torch.sum((logpz - logqz).reshape([K*batch_size,-1]),axis=1).reshape([K,batch_size])    # actually (-KL)
 
@@ -641,7 +544,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     iota_x[:,ids_cat] = torch.clamp(iota_x[:,ids_cat], min=0.0001, max=0.9999)
     batch_size = iota_x.shape[0]
     tiledmask = torch.Tensor.repeat(mask,[L,1]).cuda()
-    #tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
+    tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
     tiled_iota_x = torch.Tensor.repeat(iota_x,[L,1]).cuda()
     #tiled_tiled_iota_x = torch.Tensor.repeat(tiled_iota_x,[M,1]).cuda()
     if (not draw_xmiss) and not ignorable: tiled_iota_xfull = torch.Tensor.repeat(iota_xfull,[L,1]).cuda(); tiled_tiled_iota_xfull = torch.Tensor.repeat(tiled_iota_xfull,[M,1]).cuda()
@@ -658,7 +561,6 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
 
     ## COMPUTE LOG PROBABILITIES ##
     if not ignorable:
-      tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
       # all_logprgivenx = p_rgivenx.log_prob(tiledtiledmask)  # M*niw*bs x p
       tiledtiledmask0 = torch.Tensor.repeat(torch.Tensor.repeat(mask0,[L,1]),[M,1]).cuda()
       all_logprgivenx = p_rgivenx.log_prob(tiledtiledmask0)  # M*niw*bs x p0
@@ -666,45 +568,45 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       logprgivenx = torch.sum(all_logprgivenx,1).reshape([M,L*batch_size])
       logprgivenx1 = torch.sum(logprgivenx,0).reshape([L,batch_size])
       sum_logpr = np.sum(logprgivenx.cpu().data.numpy())
-
-      logqxmissgivenzr = {}; logpxmissgivenz = {}
-      # can combine real, count, pos if we're continuing to treat them exactly the same (would save computation time)
-      if exists_types[0]:
-        logqxmissgivenzr['real'] = torch.sum(q_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,L*batch_size,p_real])).reshape([M*L*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,L*batch_size])
-        logpxmissgivenz['real'] = torch.sum(p_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,L*batch_size,p_real])).reshape([M*L*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,L*batch_size])
-      if exists_types[1]:
-        logqxmissgivenzr['count'] = torch.sum(q_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,L*batch_size,p_count])).reshape([M*L*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,L*batch_size])
-        logpxmissgivenz['count'] = torch.sum(p_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,L*batch_size,p_count])).reshape([M*L*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,L*batch_size])
-      if exists_types[2]:
-        logqxmissgivenzr['pos'] = torch.sum(q_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,L*batch_size,p_pos])).reshape([M*L*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,L*batch_size])
-        logpxmissgivenz['pos'] = torch.sum(p_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,L*batch_size,p_pos])).reshape([M*L*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,L*batch_size])
-      if exists_types[3]:
-        for ii in range(0,p_cat):
-          if ii==0: C0=0; C1=int(Cs[ii])
-          else: C0=C1; C1=C0+int(Cs[ii])
-          
-          logqxs = q_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,L*batch_size,-1])).reshape([M*L*batch_size])
-          logpxs = p_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,L*batch_size,-1])).reshape([M*L*batch_size])
-          if ii==0:
-            
-            logqxmissgivenzr['cat'] = (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
-            logpxmissgivenz['cat'] = (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
-          else:
-            logqxmissgivenzr['cat'] = logqxmissgivenzr['cat'] + (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
-            logpxmissgivenz['cat'] = logpxmissgivenz['cat'] + (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
-          
-          
-      logpxmissgivenzsum = torch.zeros([M,L*batch_size]).cuda(); logqxmissgivenzrsum = torch.zeros([M,L*batch_size]).cuda()
-      if exists_types[0]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['real']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['real']
-      if exists_types[1]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['count']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['count']
-      if exists_types[2]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['pos']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['pos']
-      if exists_types[3]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['cat']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['cat']
-      
-      logpxmissgivenzsum1 = torch.sum(logpxmissgivenzsum,0).reshape([L, batch_size])
-      logqxmissgivenzrsum1 = torch.sum(logqxmissgivenzrsum,0).reshape([L, batch_size])
     else:
       # if ignorably missing, no p(r|x), no q(xm|z,r), and no p(xm|z)
-      all_logprgivenx = torch.zeros([M*L*batch_size,p]).cuda(); logprgivenx=torch.zeros([1]).cuda(); sum_logpr=np.zeros(1); logqxmissgivenzr=torch.zeros([1]).cuda(); logpxmissgivenz=torch.zeros([1]).cuda(); KL2=torch.zeros([1]).cuda()
+      all_logprgivenx = torch.zeros([M*L*batch_size,p]).cuda(); logprgivenx=torch.zeros([1]).cuda(); sum_logpr=np.zeros(1)
+
+    logqxmissgivenzr = {}; logpxmissgivenz = {}
+    # can combine real, count, pos if we're continuing to treat them exactly the same (would save computation time)
+    if exists_types[0]:
+      logqxmissgivenzr['real'] = torch.sum(q_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,L*batch_size,p_real])).reshape([M*L*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,L*batch_size])
+      logpxmissgivenz['real'] = torch.sum(p_xs['real'].log_prob(xincluded[:,ids_real].reshape([M,L*batch_size,p_real])).reshape([M*L*batch_size,p_real])*(1-tiledtiledmask[:,ids_real]),axis=1).reshape([M,L*batch_size])
+    if exists_types[1]:
+      logqxmissgivenzr['count'] = torch.sum(q_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,L*batch_size,p_count])).reshape([M*L*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,L*batch_size])
+      logpxmissgivenz['count'] = torch.sum(p_xs['count'].log_prob(xincluded[:,ids_count].reshape([M,L*batch_size,p_count])).reshape([M*L*batch_size,p_count])*(1-tiledtiledmask[:,ids_count]),axis=1).reshape([M,L*batch_size])
+    if exists_types[2]:
+      logqxmissgivenzr['pos'] = torch.sum(q_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,L*batch_size,p_pos])).reshape([M*L*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,L*batch_size])
+      logpxmissgivenz['pos'] = torch.sum(p_xs['pos'].log_prob(xincluded[:,ids_pos].reshape([M,L*batch_size,p_pos])).reshape([M*L*batch_size,p_pos])*(1-tiledtiledmask[:,ids_pos]),axis=1).reshape([M,L*batch_size])
+    if exists_types[3]:
+      for ii in range(0,p_cat):
+        if ii==0: C0=0; C1=int(Cs[ii])
+        else: C0=C1; C1=C0+int(Cs[ii])
+        
+        logqxs = q_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,L*batch_size,-1])).reshape([M*L*batch_size])
+        logpxs = p_xs['cat'][ii].log_prob(xincluded[:,(p_real+p_count+p_pos+C0):(p_real+p_count+p_pos+C1)].reshape([M,L*batch_size,-1])).reshape([M*L*batch_size])
+        if ii==0:
+          
+          logqxmissgivenzr['cat'] = (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
+          logpxmissgivenz['cat'] = (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
+        else:
+          logqxmissgivenzr['cat'] = logqxmissgivenzr['cat'] + (logqxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
+          logpxmissgivenz['cat'] = logpxmissgivenz['cat'] + (logpxs*(1-tiledtiledmask[:,(p_real+p_count+p_pos+C0)])).reshape([M,L*batch_size])
+        
+        
+    logpxmissgivenzsum = torch.zeros([M,L*batch_size]).cuda(); logqxmissgivenzrsum = torch.zeros([M,L*batch_size]).cuda()
+    if exists_types[0]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['real']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['real']
+    if exists_types[1]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['count']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['count']
+    if exists_types[2]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['pos']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['pos']
+    if exists_types[3]: logpxmissgivenzsum = logpxmissgivenzsum + logpxmissgivenz['cat']; logqxmissgivenzrsum = logqxmissgivenzrsum + logqxmissgivenzr['cat']
+    
+    logpxmissgivenzsum1 = torch.sum(logpxmissgivenzsum,0).reshape([L, batch_size])
+    logqxmissgivenzrsum1 = torch.sum(logqxmissgivenzrsum,0).reshape([L, batch_size])
     
     all_logpxobsgivenz = {}; logpxobsgivenz = torch.zeros([L,batch_size]).cuda()
     if exists_types[0]:
@@ -733,34 +635,21 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
 
     logqz = q_zgivenxobs.log_prob(zgivenx_flat.reshape([L,batch_size,d]))
     sum_logqz = np.sum(logqz.cpu().data.numpy())
-
-    # if not ignorable:
-    #   ## xdist: q(xm|z,r)
-    #   # if dec_distrib=="Normal":
-    #   xdist = td.Independent(td.Normal(loc=params_xr['mean'],scale=params_xr['sd']),1)
-    #   # elif dec_distrib=="StudentT":
-    #     # xdist = td.Independent(td.StudentT(loc=params_xr['mean'],scale=params_xr['sd'],df=params_xr['df']),1)
-    # else:
-    #   ## xdist: p(xm|z)
-    #   # if dec_distrib=="Normal":
-    #   xdist = td.Independent(td.Normal(loc=params_x['mean'],scale=params_x['sd']),1)
-    #   # elif dec_distrib=="StudentT":
-    #     # xdist = td.Independent(td.StudentT(loc=params_x['mean'],scale=params_x['sd'],df=params_x['df']),1)
     
     
     ## SELF-NORMALIZING IMPORTANCE WEIGHTS, USING SAMPLES OF Xm AND Z ##
-    # imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpz - logqz,0) # these are w_1,....,w_L for all observations in the batch
-    # xms = torch.mean(xincluded.reshape([M,L*batch_size,p]),0).reshape([L,batch_size,p])    # xincluded: [M*L*batch_size, p]
+    # if ignorable:
+    #   imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpz - logqz,0) # these are w_1,....,w_L for all observations in the batch
+    #   xms = torch.mean(xincluded.reshape([M,L*batch_size,p]),0).reshape([L,batch_size,p])    # xincluded: [M*L*batch_size, p]
+    # else:
+    #   imp_weights = torch.nn.functional.softmax(torch.Tensor.repeat(logpxobsgivenz,[M,1]) + logpxmissgivenzsum.reshape([M*L,batch_size]) + torch.Tensor.repeat(logpz,[M,1,1]).reshape([M*L,batch_size]) + logprgivenx.reshape([M*L,batch_size]) - torch.Tensor.repeat(logqz,[M,1,1]).reshape([M*L,batch_size]) - logqxmissgivenzrsum.reshape([M*L,batch_size]),0) # these are w_1,....,w_L for all observations in the batch
+    #   xms = xincluded.reshape([M*L,batch_size,p])    # xincluded: [M*L*batch_size, p]
     if ignorable:
-      imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpz - logqz,0) # these are w_1,....,w_L for all observations in the batch
-      xms = torch.mean(xincluded.reshape([M,L*batch_size,p]),0).reshape([L,batch_size,p])    # xincluded: [M*L*batch_size, p]
+      imp_weights = torch.nn.functional.softmax(torch.Tensor.repeat(logpxobsgivenz,[M,1]) + logpxmissgivenzsum.reshape([M*L,batch_size]) + torch.Tensor.repeat(logpz,[M,1,1]).reshape([M*L,batch_size]) - torch.Tensor.repeat(logqz,[M,1,1]).reshape([M*L,batch_size]) - logqxmissgivenzrsum.reshape([M*L,batch_size]),0) # these are w_1,....,w_L for all observations in the batch
     else:
-      # imp_weights = torch.nn.functional.softmax(logpxobsgivenz + logpxmissgivenzsum1 + logpz + logprgivenx1 - logqz - logqxmissgivenzrsum1,0) # these are w_1,....,w_L for all observations in the batch
-      # print(torch.Tensor.repeat(logpz,[M,1,1]).shape)
-      # print(torch.Tensor.repeat(logqz,[M,1,1]).shape)
       imp_weights = torch.nn.functional.softmax(torch.Tensor.repeat(logpxobsgivenz,[M,1]) + logpxmissgivenzsum.reshape([M*L,batch_size]) + torch.Tensor.repeat(logpz,[M,1,1]).reshape([M*L,batch_size]) + logprgivenx.reshape([M*L,batch_size]) - torch.Tensor.repeat(logqz,[M,1,1]).reshape([M*L,batch_size]) - logqxmissgivenzrsum.reshape([M*L,batch_size]),0) # these are w_1,....,w_L for all observations in the batch
-      xms = xincluded.reshape([M*L,batch_size,p])    # xincluded: [M*L*batch_size, p]
     
+    xms = xincluded.reshape([M*L,batch_size,p])    # xincluded: [M*L*batch_size, p]
     # print(xms)
     xm = torch.einsum('ki,kij->ij', imp_weights.float(), xms.float())
     
@@ -796,13 +685,12 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   
   if learn_r and not ignorable:
     params = params + list(decoder_r.parameters())
-  if not ignorable:
-    if exists_types[0]: params = params + list(encoders_xr['real'].parameters()); encoders_xr['real'].apply(weights_init)
-    if exists_types[1]: params = params + list(encoders_xr['count'].parameters()); encoders_xr['count'].apply(weights_init)
-    if exists_types[2]: params = params + list(encoders_xr['pos'].parameters()); encoders_xr['pos'].apply(weights_init)
-    if exists_types[3]:
-      for ii in range(0, p_cat):
-        params = params + list(encoders_xr['cat'][ii].parameters()); encoders_xr['cat'][ii].apply(weights_init)
+  if exists_types[0]: params = params + list(encoders_xr['real'].parameters()); encoders_xr['real'].apply(weights_init)
+  if exists_types[1]: params = params + list(encoders_xr['count'].parameters()); encoders_xr['count'].apply(weights_init)
+  if exists_types[2]: params = params + list(encoders_xr['pos'].parameters()); encoders_xr['pos'].apply(weights_init)
+  if exists_types[3]:
+    for ii in range(0, p_cat):
+      params = params + list(encoders_xr['cat'][ii].parameters()); encoders_xr['cat'][ii].apply(weights_init)
 
   optimizer = optim.Adam(params, lr=lr, weight_decay=L2_weight)
 
@@ -848,37 +736,36 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   params_z = {'mean': np.empty([n,d]), 'scale': np.empty([n,d])}
   # params_r = {'probs': np.empty([n,p0])}
   params_r = {'probs': np.empty([M,niw,n,p0])}
-  if not ignorable: params_xr = {}; params_xr['cat']=[]
+  params_xr = {}; params_xr['cat']=[]
   
   if exists_types[0]:
     # params_x['real'] = {'mean': np.empty([n,p_real]), 'scale': np.empty([n,p_real])}
     # if not ignorable: params_xr['real'] = {'mean': np.empty([n,p_real]), 'scale': np.empty([n,p_real])}
     params_x['real'] = {'mean': np.empty([niw,n,p_real]), 'scale': np.empty([niw,n,p_real])}
-    if not ignorable: params_xr['real'] = {'mean': np.empty([niw,n,p_real]), 'scale': np.empty([niw,n,p_real])}
+    params_xr['real'] = {'mean': np.empty([niw,n,p_real]), 'scale': np.empty([niw,n,p_real])}
   if exists_types[1]:
     # params_x['count'] = {'mean': np.empty([n,p_count]), 'scale': np.empty([n,p_count])}
     # if not ignorable: params_xr['count'] = {'mean': np.empty([n,p_real]), 'scale': np.empty([n,p_real])}
     params_x['count'] = {'mean': np.empty([niw,n,p_count]), 'scale': np.empty([niw,n,p_count])}
-    if not ignorable: params_xr['count'] = {'mean': np.empty([niw,n,p_real]), 'scale': np.empty([niw,n,p_real])}
+    params_xr['count'] = {'mean': np.empty([niw,n,p_real]), 'scale': np.empty([niw,n,p_real])}
   if exists_types[2]:
     # params_x['pos'] = {'mean': np.empty([n,p_pos]), 'scale': np.empty([n,p_pos])}
     # if not ignorable: params_xr['pos'] = {'mean': np.empty([n,p_real]), 'scale': np.empty([n,p_real])}
     params_x['pos'] = {'mean': np.empty([niw,n,p_pos]), 'scale': np.empty([niw,n,p_pos])}
-    if not ignorable: params_xr['pos'] = {'mean': np.empty([niw,n,p_real]), 'scale': np.empty([niw,n,p_real])}
+    params_xr['pos'] = {'mean': np.empty([niw,n,p_real]), 'scale': np.empty([niw,n,p_real])}
   if exists_types[3]:
     for ii in range(0, p_cat):
       # params_x['cat'].append(np.empty([n,int(Cs[ii])]))
       # if not ignorable: params_xr['cat'].append(np.empty([n,int(Cs[ii])]))
       params_x['cat'].append(np.empty([niw,n,int(Cs[ii])]))
-      if not ignorable: params_xr['cat'].append(np.empty([niw,n,int(Cs[ii])]))
+      params_xr['cat'].append(np.empty([niw,n,int(Cs[ii])]))
 
   if train==1:
     if warm_start:
       encoder=saved_model['encoder']
       decoders=saved_model['decoders']
-      if not ignorable:
-        encoders_xr=saved_model['encoders_xr']
-        if (learn_r and not ignorable): decoder_r=saved_model['decoder_r']
+      encoders_xr=saved_model['encoders_xr']
+      if (learn_r and not ignorable): decoder_r=saved_model['decoder_r']
     # Training+Imputing
     for ep in range(1,n_epochs):
       if ep % 10==0:
@@ -916,13 +803,12 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         if exists_types[3]:
           for ii in range(0,p_cat):
             decoders['cat'][ii].zero_grad()
-        if not ignorable:
-          if exists_types[0]: encoders_xr['real'].zero_grad()
-          if exists_types[1]: encoders_xr['count'].zero_grad()
-          if exists_types[2]: encoders_xr['pos'].zero_grad()
-          if exists_types[3]:
-            for ii in range(0,p_cat):
-              encoders_xr['cat'][ii].zero_grad()
+        if exists_types[0]: encoders_xr['real'].zero_grad()
+        if exists_types[1]: encoders_xr['count'].zero_grad()
+        if exists_types[2]: encoders_xr['pos'].zero_grad()
+        if exists_types[3]:
+          for ii in range(0,p_cat):
+            encoders_xr['cat'][ii].zero_grad()
         if (learn_r and not ignorable): decoder_r.zero_grad()
         
         loss_fit = nimiwae_loss(iota_xfull=b_full, iota_x = b_data, mask = b_mask, mask0 = b_mask0, covar_miss = b_covar, temp=temp)
@@ -937,23 +823,23 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
             # params_x['real']['mean'][splits[it],:] = temp_params_x['real']['mean']; params_x['real']['scale'][splits[it],:] = temp_params_x['real']['scale']
             # if not ignorable: params_xr['real']['mean'][splits[it],:] = temp_params_xr['real']['mean']; params_xr['real']['scale'][splits[it],:] = temp_params_xr['real']['scale']
             params_x['real']['mean'][:,splits[it],:] = temp_params_x['real']['mean']; params_x['real']['scale'][:,splits[it],:] = temp_params_x['real']['scale']
-            if not ignorable: params_xr['real']['mean'][:,splits[it],:] = temp_params_xr['real']['mean']; params_xr['real']['scale'][:,splits[it],:] = temp_params_xr['real']['scale']
+            params_xr['real']['mean'][:,splits[it],:] = temp_params_xr['real']['mean']; params_xr['real']['scale'][:,splits[it],:] = temp_params_xr['real']['scale']
           if exists_types[1]:
             # params_x['count']['mean'][splits[it],:] = temp_params_x['count']['mean']; params_x['count']['scale'][splits[it],:] = temp_params_x['count']['scale']
             # if not ignorable: params_xr['count']['mean'][splits[it],:] = temp_params_xr['count']['mean']; params_xr['count']['scale'][splits[it],:] = temp_params_xr['count']['scale']
             params_x['count']['mean'][:,splits[it],:] = temp_params_x['count']['mean']; params_x['count']['scale'][:,splits[it],:] = temp_params_x['count']['scale']
-            if not ignorable: params_xr['count']['mean'][:,splits[it],:] = temp_params_xr['count']['mean']; params_xr['count']['scale'][:,splits[it],:] = temp_params_xr['count']['scale']
+            params_xr['count']['mean'][:,splits[it],:] = temp_params_xr['count']['mean']; params_xr['count']['scale'][:,splits[it],:] = temp_params_xr['count']['scale']
           if exists_types[2]:
             # params_x['pos']['mean'][splits[it],:] = temp_params_x['pos']['mean']; params_x['pos']['scale'][splits[it],:] = temp_params_x['pos']['scale']
             # if not ignorable: params_xr['pos']['mean'][splits[it],:] = temp_params_xr['pos']['mean']; params_xr['pos']['scale'][splits[it],:] = temp_params_xr['pos']['scale']
             params_x['pos']['mean'][:,splits[it],:] = temp_params_x['pos']['mean']; params_x['pos']['scale'][:,splits[it],:] = temp_params_x['pos']['scale']
-            if not ignorable: params_xr['pos']['mean'][:,splits[it],:] = temp_params_xr['pos']['mean']; params_xr['pos']['scale'][:,splits[it],:] = temp_params_xr['pos']['scale']
+            params_xr['pos']['mean'][:,splits[it],:] = temp_params_xr['pos']['mean']; params_xr['pos']['scale'][:,splits[it],:] = temp_params_xr['pos']['scale']
           if exists_types[3]:
             for ii in range(0, p_cat):
               # params_x['cat'][ii][splits[it],:] = temp_params_x['cat'][ii]
               # if not ignorable: params_xr['cat'][ii][splits[it],:] = temp_params_xr['cat'][ii]
               params_x['cat'][ii][:,splits[it],:] = temp_params_x['cat'][ii]
-              if not ignorable: params_xr['cat'][ii][:,splits[it],:] = temp_params_xr['cat'][ii]
+              params_xr['cat'][ii][:,splits[it],:] = temp_params_xr['cat'][ii]
           # if not ignorable: params_r['probs'][splits[it],:] = temp_params_r['probs']
           if not ignorable: params_r['probs'][:,:,splits[it],:] = temp_params_r['probs']
           params_z['mean'][splits[it],:] = temp_params_z['mean']; params_z['scale'][splits[it],:] = temp_params_z['scale']
@@ -1000,10 +886,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         NIMIWAE_LB = total_loss / (niw*n)
         ## loss = loss/(K*b_data.shape[0])                        # loss for a batch
       elif(arch=="IWAE"):
-        if not ignorable:
-          NIMIWAE_LB = total_loss / (niw*n) - np.log(niw) - np.log(M)
-        else:
-          NIMIWAE_LB = total_loss / (niw*n) - np.log(niw) - np.log(M)
+        NIMIWAE_LB = total_loss / (niw*n) + np.log(niw) + np.log(M)
         ## loss = loss/(b_data.shape[0]) + np.log(K) + np.log(M)   # loss for a batch
 
       NIMIWAE_LB_epoch=np.append(NIMIWAE_LB_epoch,NIMIWAE_LB)
@@ -1198,8 +1081,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           optimizer.zero_grad()
           encoder.zero_grad()
           decoders.zero_grad()
-          if not ignorable:
-            encoders_xr.zero_grad()
+          encoders_xr.zero_grad()
           if (learn_r and not ignorable): decoder_r.zero_grad()
           
           #print(b_data_val[:20])
@@ -1214,10 +1096,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           NIMIWAE_val_LB = total_val_loss / (niw*n)
           ## loss = loss/(K*b_data.shape[0])                        # loss for a batch
         elif(arch=="IWAE"):
-          if not ignorable:
-            NIMIWAE_val_LB = total_val_loss / (niw*n) - np.log(niw) - np.log(M)
-          else:
-            NIMIWAE_val_LB = total_val_loss / (niw*n) - np.log(niw) - np.log(M)
+          NIMIWAE_val_LB = total_val_loss / (niw*n) - np.log(niw) - np.log(M)
         
         NIMIWAE_val_LB_epoch=np.append(NIMIWAE_val_LB_epoch,NIMIWAE_val_LB)
         #### example: (people usually don't skip first epochs)
@@ -1241,15 +1120,12 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
             early_stop_epochs = ep
         if early_stopped: break
       sys.stdout.flush()   # output everything
-    if not ignorable:
-      if (learn_r and not ignorable): saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders, 'decoder_r':decoder_r}
-      else: saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders}
-    else:
-      saved_model={'encoder':encoder,'decoders':decoders}
+    if (learn_r and not ignorable): saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders, 'decoder_r':decoder_r}
+    else: saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders}
     
     all_params = {'x': params_x, 'z': params_z}
     if (not ignorable) and learn_r and not ignorable: all_params['r'] = params_r
-    if not ignorable: all_params['xm'] = params_xr
+    all_params['xm'] = params_xr
     
     # mse_train={'miss':mse_train_miss,'obs':mse_train_obs}
     train_params = {'h1':h1, 'h2':h2, 'h3':h3, 'h4':h4, 'sigma':sigma, 'bs':bs, 'n_epochs':n_epochs, 'lr':lr, 'niw':niw, 'dim_z':dim_z, 'L':L, 'M':M, 'n_hidden_layers': n_hidden_layers, 'n_hidden_layers_r': n_hidden_layers_r, 'L1_weight': L1_weight, 'L2_weight': L2_weight, "early_stopped":early_stop, "early_stop_epochs":ep}
@@ -1264,8 +1140,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     # validating (hyperparameter values) or testing
     encoder=saved_model['encoder']
     decoders=saved_model['decoders']
-    if not ignorable:
-      encoders_xr=saved_model['encoders_xr']
+    encoders_xr=saved_model['encoders_xr']
     if (learn_r and not ignorable): decoder_r=saved_model['decoder_r']
 
     for ep in range(1,n_epochs):
@@ -1287,17 +1162,17 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       encoder.zero_grad()
       if exists_types[0]:
         decoders['real'].zero_grad()
-        if not ignorable: encoders_xr['real'].zero_grad()
+        encoders_xr['real'].zero_grad()
       if exists_types[1]:
         decoders['count'].zero_grad()
-        if not ignorable: encoders_xr['count'].zero_grad()
+        encoders_xr['count'].zero_grad()
       if exists_types[2]:
         decoders['pos'].zero_grad()
-        if not ignorable: encoders_xr['pos'].zero_grad()
+        encoders_xr['pos'].zero_grad()
       if exists_types[3]:
         for ii in range(0,p_cat):
           decoders['cat'][ii].zero_grad()
-          if not ignorable: encoders_xr['cat'][ii].zero_grad()
+          encoders_xr['cat'][ii].zero_grad()
 
       if learn_r and not ignorable: decoder_r.zero_grad()
 
@@ -1327,23 +1202,23 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           # params_x['real']['mean'][splits[it],:] = temp_params_x['real']['mean']; params_x['real']['scale'][splits[it],:] = temp_params_x['real']['scale']
           # if not ignorable: params_xr['real']['mean'][splits[it],:] = temp_params_xr['real']['mean']; params_xr['real']['scale'][splits[it],:] = temp_params_xr['real']['scale']
           params_x['real']['mean'][:,splits[it],:] = temp_params_x['real']['mean']; params_x['real']['scale'][:,splits[it],:] = temp_params_x['real']['scale']
-          if not ignorable: params_xr['real']['mean'][:,splits[it],:] = temp_params_xr['real']['mean']; params_xr['real']['scale'][:,splits[it],:] = temp_params_xr['real']['scale']
+          params_xr['real']['mean'][:,splits[it],:] = temp_params_xr['real']['mean']; params_xr['real']['scale'][:,splits[it],:] = temp_params_xr['real']['scale']
         if exists_types[1]:
           # params_x['count']['mean'][splits[it],:] = temp_params_x['count']['mean']; params_x['count']['scale'][splits[it],:] = temp_params_x['count']['scale']
           # if not ignorable: params_xr['count']['mean'][splits[it],:] = temp_params_xr['count']['mean']; params_xr['count']['scale'][splits[it],:] = temp_params_xr['count']['scale']
           params_x['count']['mean'][:,splits[it],:] = temp_params_x['count']['mean']; params_x['count']['scale'][:,splits[it],:] = temp_params_x['count']['scale']
-          if not ignorable: params_xr['count']['mean'][:,splits[it],:] = temp_params_xr['count']['mean']; params_xr['count']['scale'][:,splits[it],:] = temp_params_xr['count']['scale']
+          params_xr['count']['mean'][:,splits[it],:] = temp_params_xr['count']['mean']; params_xr['count']['scale'][:,splits[it],:] = temp_params_xr['count']['scale']
         if exists_types[2]:
           # params_x['pos']['mean'][splits[it],:] = temp_params_x['pos']['mean']; params_x['pos']['scale'][splits[it],:] = temp_params_x['pos']['scale']
           # if not ignorable: params_xr['pos']['mean'][splits[it],:] = temp_params_xr['pos']['mean']; params_xr['pos']['scale'][splits[it],:] = temp_params_xr['pos']['scale']
           params_x['pos']['mean'][:,splits[it],:] = temp_params_x['pos']['mean']; params_x['pos']['scale'][:,splits[it],:] = temp_params_x['pos']['scale']
-          if not ignorable: params_xr['pos']['mean'][:,splits[it],:] = temp_params_xr['pos']['mean']; params_xr['pos']['scale'][:,splits[it],:] = temp_params_xr['pos']['scale']
+          params_xr['pos']['mean'][:,splits[it],:] = temp_params_xr['pos']['mean']; params_xr['pos']['scale'][:,splits[it],:] = temp_params_xr['pos']['scale']
         if exists_types[3]:
           for ii in range(0, p_cat):
             # params_x['cat'][ii][splits[it],:] = temp_params_x['cat'][ii]
             # if not ignorable: params_xr['cat'][ii][splits[it],:] = temp_params_xr['cat'][ii]
             params_x['cat'][ii][:,splits[it],:] = temp_params_x['cat'][ii]
-            if not ignorable: params_xr['cat'][ii][:,splits[it],:] = temp_params_xr['cat'][ii]
+            params_xr['cat'][ii][:,splits[it],:] = temp_params_xr['cat'][ii]
         # if not ignorable: params_r['probs'][splits[it],:] = temp_params_r['probs']
         if not ignorable: params_r['probs'][:,:,splits[it],:] = temp_params_r['probs']
         params_z['mean'][splits[it],:] = temp_params_z['mean']; params_z['scale'][splits[it],:] = temp_params_z['scale']
@@ -1357,10 +1232,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         NIMIWAE_LB = total_loss / (niw*n)
         ## loss = loss/(K*b_data.shape[0])                        # loss for a batch
       elif(arch=="IWAE"):
-        if not ignorable:
-          NIMIWAE_LB = total_loss / (niw*n) - np.log(niw) - np.log(M)
-        else:
-          NIMIWAE_LB = total_loss / (niw*n) - np.log(niw) - np.log(M)
+        NIMIWAE_LB = total_loss / (niw*n) - np.log(niw) - np.log(M)
         ## loss = loss/(b_data.shape[0]) + np.log(K) + np.log(M)   # loss for a batch
       
       t0_impute=time.time()
@@ -1374,10 +1246,12 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
       
       if save_imps:
         
-        if not ignorable: all_imp_weights = np.empty([M*L,n])
-        else: all_imp_weights = np.empty([L,n])
-        if ignorable: all_xms = np.empty([L,np.sum(Missing==0)])
-        else: all_xms = np.empty([M*L,np.sum(Missing==0)])
+        # if not ignorable: all_imp_weights = np.empty([M*L,n])
+        # else: all_imp_weights = np.empty([L,n])
+        # if ignorable: all_xms = np.empty([L,np.sum(Missing==0)])
+        # else: all_xms = np.empty([M*L,np.sum(Missing==0)])
+        all_imp_weights = np.empty([M*L,n])
+        all_xms = np.empty([M*L,np.sum(Missing==0)])
         
         idsx, idsy = np.where(Missing==0)
         # np.savetxt(dir_name + '/miss_XY.csv',np.stack((idsx,idsy),axis=1),delimiter=",")   # X coords in 1st column, Y coords in 2nd column
@@ -1528,15 +1402,12 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     ########
     
     
-    if not ignorable:
-      if (learn_r and not ignorable): saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders, 'decoder_r':decoder_r}
-      else: saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders}
-    else:
-      saved_model={'encoder': encoder, 'decoders': decoders}
+    if (learn_r and not ignorable): saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders, 'decoder_r':decoder_r}
+    else: saved_model={'encoder': encoder, 'encoders_xr': encoders_xr, 'decoders': decoders}
     
     all_params = {'x': params_x, 'z': params_z}
     if (not ignorable) and learn_r: all_params['r'] = params_r
-    if not ignorable: all_params['xm'] = params_xr
+    all_params['xm'] = params_xr
     
     if learn_r and not ignorable: decoder_r_weights = (decoder_r[0].weight).cpu().data.numpy()
     else: decoder_r_weights=None
