@@ -156,9 +156,10 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
         if(is.null(n_hidden_layers_r0)){ n_hidden_layers_r = n_hidden_layers[nn] }   # n_hidden_layers for R is same as other NNs
         # n_hidden_layers_r = 0L
 
-        # niw = 5L
-        niw = 25L
+        niw = 5L
+        # niw = 25L
         # niw = 1L   # trying this test
+        print(paste("Training niw:",niw))
         res_train = FUN(rdeponz=rdeponz, data=np$array(datas$train),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$train),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$train),
                         covars_r=np$array(covars_r), norm_means=np$array(norm_means), norm_sds=np$array(norm_sds), learn_r=learn_r, Cs=Cs,
                         ignorable=ignorable,n_hidden_layers=n_hidden_layers[nn], n_hidden_layers_r=n_hidden_layers_r[nr],
