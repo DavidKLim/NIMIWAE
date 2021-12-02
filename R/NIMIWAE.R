@@ -6,9 +6,10 @@
 #' Process results: return imputation metrics
 #'
 #' @param data Data matrix (N x P)
-#' @param data_types Vector of data types ("real", "count", "pos", "cat")
+#' @param data_types Vector of data types ('real', `'count', 'pos', 'cat')
+#' @param dataset (optional) Dataset name, default: "".
 #' @param Missing Missingness mask matrix (N x P)
-#' @param g Training-validation-test split partitioning
+#' @param g (optional) Vector with entries "train", "valid", or "test" of length N to denote Training-validation-test split partitioning. If the 'test' set is empty, after model training, final imputation is done on the 'train' set. Otherwise, the 'test' set will be imputed. If `g` is not supplied, an 80-20 train-valid split will be generated, and the `train` set will be imputed..
 #' @param rdeponz TRUE/FALSE: Whether to allow missingness (r) to depend on the latent variable (z). Default is FALSE
 #' @param learn_r TRUE/FALSE: Whether to learn missingness model via appended NN (TRUE, default), or fit a known logistic regression model (FALSE). If FALSE, `phi0` and `phi` must be specified
 #' @param phi0 (optional) Intercept of logistic regression model, if learn_r = FALSE.
@@ -34,7 +35,7 @@
 #' @importFrom reticulate source_python import
 #'
 #' @export
-NIMIWAE = function(data, dataset, data_types, Missing, g=NULL, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE", draw_xmiss=T,
+NIMIWAE = function(data, dataset="", data_types, Missing, g=NULL, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE", draw_xmiss=T,
                    hyperparameters=list(sigma="elu", h=c(64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=c(0L,1L),
                                         bs=c(1000L), lr=c(0.001,0.01), dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))),
                                         niw=5L, n_imputations=5L, n_epochs=2002L), save_imps=F, dir_name=".", normalize=T
@@ -47,6 +48,12 @@ NIMIWAE = function(data, dataset, data_types, Missing, g=NULL, rdeponz=F, learn_
 
   np = reticulate::import("numpy")
 
+  if(length(data_types) == 1 & ncol(data) != 1){data_types = rep(data_types,ncol(data))}
+  if(!all(dim(data) == dim(Missing))){stop("data should have the same dimensions as Missing.")}
+  if(!all(data_types %in% c("real","cat","count","pos"))){stop("NIMIWAE requires 'real', 'cat', 'count' or 'pos' variables.")}
+  if(any(data_types=="cat") & !ignorable){warning("MNAR categorical variables are still under development.")}
+  if(any(data_types %in% c("count","pos"))){warning("Count/pos variables has not been rigorously tested yet, and is still under development.")}
+  if(!all(g %in% c("train","valid","test"))){stop("train-valid-test split vector g should contain only values of 'train', 'valid', or 'test'")}
   data_types_0 = data_types
 
   N = nrow(data); P=ncol(data)

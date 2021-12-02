@@ -40,7 +40,7 @@
 #' @importFrom mice mice complete
 #'
 #' @export
-tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,data_types_0, Missing, g,
+tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,data_types_0, Missing, g,
                            rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, Cs, ignorable=F, covars_r=rep(1,ncol(data)),
                            arch="IWAE", draw_xmiss=T,  # for NIMIWAE: whether each NN is optimized separately, architecture: VAE or IWAE
                            sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=NULL, bs=1000L, lr=c(0.001,0.01),
@@ -375,7 +375,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset,data,data_types,dat
     # default: h=256, n_hidden_layers=10, dim_z=64, bs=64
 
     norm_means[one_hot_max_sizes>=2] = 0; norm_sds[one_hot_max_sizes>=2] = 1
-    n_epochs = c(200L)   # need to put in FSCseqPaper instead
+    n_epochs = c(200L)
     n_combs_params=length(h)*length(bs)*length(lr)*length(dim_z)*length(n_epochs)*length(n_hidden_layers)
 
     list_train = list()
