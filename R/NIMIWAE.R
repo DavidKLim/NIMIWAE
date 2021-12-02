@@ -6,7 +6,7 @@
 #' Process results: return imputation metrics
 #'
 #' @param data Data matrix (N x P)
-#' @param data_types Vector of data types ('real', `'count', 'pos', 'cat')
+#' @param data_types Vector of data types ('real', 'count', 'pos', 'cat')
 #' @param dataset (optional) Dataset name, default: "".
 #' @param Missing Missingness mask matrix (N x P)
 #' @param g (optional) Vector with entries "train", "valid", or "test" of length N to denote Training-validation-test split partitioning. If the 'test' set is empty, after model training, final imputation is done on the 'train' set. Otherwise, the 'test' set will be imputed. If `g` is not supplied, an 80-20 train-valid split will be generated, and the `train` set will be imputed..
