@@ -18,8 +18,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   import scipy.io
   import scipy.sparse
   from scipy.io import loadmat
-  import pandas as pd
-  import matplotlib.pyplot as plt
+  # import pandas as pd
+  # import matplotlib.pyplot as plt
   import torch.distributions as td
   from torch import nn, optim
   from torch.nn import functional as F
@@ -1477,9 +1477,9 @@ def run_MIWAE(data,Missing,norm_means,norm_sds,n_hidden_layers=2,dec_distrib="No
   import scipy.io
   import scipy.sparse
   from scipy.io import loadmat
-  import pandas as pd
-  from matplotlib.backends.backend_pdf import PdfPages
-  import matplotlib.pyplot as plt
+  # import pandas as pd
+  # from matplotlib.backends.backend_pdf import PdfPages
+  # import matplotlib.pyplot as plt
   import torch.distributions as td
 
   from torch import nn, optim
