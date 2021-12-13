@@ -24,7 +24,7 @@
 #' @param n_hidden_layers_r integer, #hidden layers for Decoder_r (default: 0)
 #' @param bs integer, batch size (training)
 #' @param lr float, learning rate
-#' @param dim_z integer, dimensionality of latent z. Default: 5
+#' @param dim_z integer, dimensionality of latent z. Default: 1/4 and 1/2 of the columns of data
 #' @param niw integer, number of importance weights (samples drawn from each latent space). Default: 5
 #' @param n_epoch integer, maximum number of epochs (without early stop). Default: 2002
 #' @param data_types_HIVAE Specify for HIVAE only.
@@ -48,7 +48,8 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                            data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
                            MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T
 ){
-
+  if(any(dim_z<=0)){dim_z[dim_z<=0]=1}
+  if(all(dim_z==dim_z[1])){dim_z = dim_z[1]}
   path <- paste(system.file(package="NIMIWAE"), "NIMIWAE.py", sep="/")
   # print(path)
   # print(ls())
