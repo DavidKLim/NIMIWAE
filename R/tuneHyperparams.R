@@ -48,7 +48,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                            data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
                            MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T
 ){
-  if(any(dim_z<=0)){dim_z[dim_z<=0]=1}
+  if(any(dim_z<=0)){dim_z[dim_z<=0]=1L}
   if(all(dim_z==dim_z[1])){dim_z = dim_z[1]}
   path <- paste(system.file(package="NIMIWAE"), "NIMIWAE.py", sep="/")
   # print(path)
