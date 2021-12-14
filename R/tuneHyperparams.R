@@ -48,6 +48,9 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                            data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
                            MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T
 ){
+  h = as.integer(h); n_hidden_layers = as.integer(n_hidden_layers)
+  if(!is.null(n_hidden_layers_r0)[1]){n_hidden_layers_r0 = as.integer(n_hidden_layers_r0)}
+  bs = as.integer(bs); niws = as.integer(niws); n_imputations = as.integer(n_imputations); n_epochs = as.integer(n_epochs)
   if(any(dim_z<=0)){dim_z[dim_z<=0]=1L}
   if(all(dim_z==dim_z[1])){dim_z = dim_z[1]}
   path <- paste(system.file(package="NIMIWAE"), "NIMIWAE.py", sep="/")
