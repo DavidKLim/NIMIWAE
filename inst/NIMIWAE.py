@@ -28,6 +28,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   #from torchvision.utils import save_image
   import time
   import sys
+  import os
 
   from torch.distributions import constraints
   from torch.distributions.distribution import Distribution
