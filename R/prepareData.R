@@ -38,43 +38,56 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
   # simulate data by simulating D-dimensional Z latent variable for N observations
   # and then apply W and B (both drawn from N(0,1)) weights and biases to obtain X
   set.seed(seed)
-  Z=matrix(nrow=N,ncol=D)
-  for(d in 1:D){
-    Z[,d]=rnorm(N,mean=0,sd=1)
-  }
+
   # print("HELLO???")
   # print(nonlinear)
   # print("HELLO")
+
+  #### NEED TO UPDATE THESE GENERATIONS
   if(nonlinear){
     print("Nonlinear data generation")
-    H = 64
-    sd1 = 1/4; sd2 = 1/4
-    W1 = matrix(rnorm(D*H,mean=0,sd=sd1),nrow=D,ncol=H) # weights
-    # W2 = matrix(rnorm(H*H,mean=0,sd=sd2),nrow=H,ncol=H)
-    W2 = matrix(rnorm(H*P,mean=0,sd=sd1),nrow=H,ncol=P)
-    B1 = matrix(rnorm(N*H,mean=0,sd=sd2),nrow=N,ncol=H,byrow=T) # biases: same for each obs
-    # B2 = matrix(rnorm(N*H,mean=0,sd=sd2),nrow=N,ncol=H,byrow=T)
-    B2 = matrix(rnorm(N*P,mean=0,sd=sd2),nrow=N,ncol=P,byrow=T)
+    # H = 64
+    # sd1 = 1/4; sd2 = 1/4
+    # W1 = matrix(rnorm(D*H,mean=0,sd=sd1),nrow=D,ncol=H) # weights
+    # # W2 = matrix(rnorm(H*H,mean=0,sd=sd2),nrow=H,ncol=H)
+    # W2 = matrix(rnorm(H*P,mean=0,sd=sd1),nrow=H,ncol=P)
+    # B1 = matrix(rnorm(N*H,mean=0,sd=sd2),nrow=N,ncol=H,byrow=T) # biases: same for each obs
+    # # B2 = matrix(rnorm(N*H,mean=0,sd=sd2),nrow=N,ncol=H,byrow=T)
+    # B2 = matrix(rnorm(N*P,mean=0,sd=sd2),nrow=N,ncol=P,byrow=T)
+    #
+    # # W0 = matrix(rnorm(D*P,mean=0,sd=sd2),nrow=D,ncol=P)
+    # # B0 = matrix(rnorm(N*P,mean=0,sd=sd3),nrow=N,ncol=P,byrow=T)
+    #
+    # # library(qrnn) # import "elu" function
+    # X = qrnn::elu(Z%*%W1 + B1) %*% W2 + B2  # mimicking 1 HL with elu activation functions -- > NxP matrix
 
-    # W0 = matrix(rnorm(D*P,mean=0,sd=sd2),nrow=D,ncol=P)
-    # B0 = matrix(rnorm(N*P,mean=0,sd=sd3),nrow=N,ncol=P,byrow=T)
+    Z1 = MASS::mvrnorm(N, rep(0,D), Sigma=diag(D))
+    Z2 = MASS::mvrnorm(N, rep(0,D), Sigma=diag(D))
 
-    # library(qrnn) # import "elu" function
-    X = qrnn::elu(Z%*%W1 + B1) %*% W2 + B2  # mimicking 1 HL with elu activation functions -- > NxP matrix
-    sds=list(sd1=sd1,sd2=sd2); W=list(W1=W2,W2=W2); B=list(B1=B1,B2=B2)
+    sd1 = 0.5
+
+    W1 = matrix(runif(D*floor(P/2),0.5,1),nrow=D,ncol=floor(P/2)) # weights
+    W2 = matrix(runif(D*(P-floor(P/2)),0.5,1),nrow=D,ncol=P-floor(P/2)) # weights
+    B1 = matrix(rnorm(N*floor(P/2),0,sd1), nrow=N, ncol=floor(P/2))
+    B2 = matrix(rnorm(N*(P-floor(P/2)),0,sd1),nrow=N,ncol=P-floor(P/2))
+    X1 = qrnn::sigmoid(Z2%*%W1+B1)
+    X2 = cos(Z1%*%W2+B2) + qrnn::sigmoid(Z2%*%W2+B2)
+
+
+    X=cbind(X1,X2)
+
+    sds=list(sd1=sd1); W=list(W1=W2,W2=W2); B=list(B1=B1,B2=B2)
   }else{
+    Z = MASS::mvrnorm(N, rep(0,D), Sigma=diag(D))
+    sd1 = 1
     print("Linear data generation")
-    H=NA
-    W = matrix(nrow=D,ncol=P) # weights
-    B = matrix(nrow=N,ncol=P) # biases
-    for(p in 1:P){
-      W[,p]=rnorm(D,mean=0,sd=1)
-      B[,p]=rnorm(N,mean=0,sd=1)
-    }
+    W = matrix(runif(D*P, 0.5, 1),nrow=D,ncol=P) # weights
+    B = matrix(rnorm(N*P, 0, sd1),nrow=N,ncol=P)
+
     X = Z%*%W + B
-    sds=list()
+    sds=list(sd1=sd1)
   }
-  # classes=rep(1,N)  # let's make this our response variable
+  X = apply(X,2,function(x){(x-mean(x))/sd(x)}) # pre normalize
 
   params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, seed=seed, sds=sds)
 

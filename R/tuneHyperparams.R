@@ -46,7 +46,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                            sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=NULL, bs=1000L, lr=c(0.001,0.01),
                            dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))), niws=5L, n_imputations=5L, n_epochs=2002L,
                            data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
-                           MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T
+                           MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T, early_stop = T
 ){
   h = as.integer(h); n_hidden_layers = as.integer(n_hidden_layers)
   if(!is.null(n_hidden_layers_r0)[1]){n_hidden_layers_r0 = as.integer(n_hidden_layers_r0)}
@@ -138,9 +138,9 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
     } else{n_hidden_layers_r = n_hidden_layers_r0}   # if not null, set to specified value(s)
 
     n_combs_params=length(h)*length(bs)*length(lr)*length(dim_z)*length(niws)*length(n_epochs)*length(n_hidden_layers)*length(n_hidden_layers_r)*length(L1_weights)
-    LBs_trainVal = matrix(NA,nrow=n_combs_params,ncol=8+3)   # contain params, trainMSE,valMSE,trainLB,valLB
+    LBs_trainVal = matrix(NA,nrow=n_combs_params,ncol=8+3+2)   # contain params, trainMSE,valMSE,trainLB,valLB
     colnames(LBs_trainVal) = c("h","bs","lr","dim_z","niw","n_epoch","nhls","nhls_r","L1_weights",
-                               "LB_train","LB_valid")
+                               "LB_train","L1_train","LB_valid","L1_valid")
     index=1
     for(i in 1:length(h)){for(j in 1:length(bs)){for(k in 1:length(lr)){for(l in 1:length(dim_z)){
       for(m in 1:length(niws)){for(mm in 1:length(n_epochs)){for(nn in 1:length(n_hidden_layers)){
@@ -172,7 +172,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                         arch=arch, draw_xmiss=draw_xmiss,
                         #add_miss_term=add_miss_term,#draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
                         pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=beta,beta_anneal_rate=beta_anneal_rate,
-                        phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, train=1L,
+                        phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, early_stop = early_stop, train=1L,
                         # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
                         sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niw, dim_z=dim_z[l], L=niw, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
                         # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=5L, dir_name=dir_name, save_imps=F) #M=100L)
@@ -185,7 +185,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                         arch=arch, draw_xmiss=draw_xmiss,
                         #add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
                         pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=1,beta_anneal_rate=0,
-                        phi0=phi0, phi=phi, warm_start=F, saved_model=res_train$'saved_model', train=0L,
+                        phi0=phi0, phi=phi, warm_start=F, saved_model=res_train$'saved_model', early_stop = F, train=0L,
                         # sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
                         sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niw, dim_z=dim_z[l], L=niw, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
                         # sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=5L, dir_name=dir_name, save_imps=F) #M=100L)
@@ -195,10 +195,10 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
 
         print(c(h[i],bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
                 n_hidden_layers[nn],n_hidden_layers_r[nr],L1_weights[o1],L2_weights[o2],
-                res_train$'LB',res_train$'MSE'$miss[length(res_train$'MSE'$miss)],res_valid$'LB',res_valid$'MSE'$miss[length(res_valid$'MSE'$miss)]))
+                res_train$'LB',res_train$'L1s'$'miss',res_valid$'LB',res_valid$'L1s'$'miss'))
         LBs_trainVal[index,]=c(h[i],bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
                                n_hidden_layers[nn],n_hidden_layers_r[nr],L1_weights[o1],
-                               res_train$'LB',res_train$'MSE'$miss[length(res_train$'MSE'$miss)],res_valid$'LB',res_valid$'MSE'$miss[length(res_valid$'MSE'$miss)])
+                               res_train$'LB',res_train$'L1s'$'miss',res_valid$'LB',res_valid$'L1s'$'miss')
 
         print(LBs_trainVal)
         if(is.na(res_valid$'LB')){res_valid$'LB'=-Inf}
@@ -237,7 +237,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                    arch=arch, draw_xmiss=draw_xmiss,
                    #add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
                    pre_impute_value=pre_impute_value,h1=opt_params$'h1',h2=opt_params$'h2',h3=opt_params$'h3',h4=opt_params$'h4',#beta=1,beta_anneal_rate=0,
-                   phi0=phi0, phi=phi, warm_start=F, saved_model=saved_model, train=0L,
+                   phi0=phi0, phi=phi, warm_start=F, saved_model=saved_model, early_stop=F, train=0L,
                    sigma=opt_params$'sigma',bs = test_bs, n_epochs = test_epochs,lr=opt_params$'lr',niw=opt_params$'niw',dim_z=opt_params$'dim_z',L=opt_params$'L', M=opt_params$'M', dir_name=dir_name, save_imps=save_imps)
 
     print(c(opt_params$'h1', opt_params$'bs', opt_params$'lr', opt_params$'dim_z', opt_params$'niw',
