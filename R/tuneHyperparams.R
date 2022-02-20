@@ -199,8 +199,10 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
         LBs_trainVal[index,]=c(h[i],bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
                                n_hidden_layers[nn],n_hidden_layers_r[nr],L1_weights[o1],
                                res_train$'LB',res_train$'L1s'$'miss',res_valid$'LB',res_valid$'L1s'$'miss')
+        save(LBs_trainVal, file=sprintf("%s/LBs_trainVal",dir_name))
 
-        print(LBs_trainVal)
+        print(LBs_trainVal[1:index,])
+        print(paste0("Search grid #",index," of ",n_combs_params))
         if(is.na(res_valid$'LB')){res_valid$'LB'=-Inf}
 
         # save only the best result currently (not all results) --> save memory

@@ -181,9 +181,11 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   
   # Define decoder/encoder
   p_z = td.Independent(td.Normal(loc=torch.zeros(d).cuda(),scale=torch.ones(d).cuda()),1)
+  
   if (sigma=="relu"): act_fun=torch.nn.ReLU()
   elif (sigma=="elu"): act_fun=torch.nn.ELU()
-  
+  elif (sigma=="tanh"): act_fun=torch.nn.Tanh()
+  elif (sigma=="sigmoid"): act_fun=torch.nn.Sigmoid()
   def network_maker(act_fun, n_hidden_layers, in_h, h, out_h, bias=True, dropout=False):
     # create NN layers
     if n_hidden_layers==0:
@@ -663,6 +665,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   # initialize weights
   def weights_init(layer):
     if type(layer) == nn.Linear: torch.nn.init.orthogonal_(layer.weight)
+    # if type(layer) == nn.Linear: torch.nn.init.xavier_normal_(layer.weight)   # better for sigmoid/tanh act fun's?
   
   # Define ADAM optimizer
   # if not ignorable:
@@ -1579,6 +1582,8 @@ def run_MIWAE(data,Missing,norm_means,norm_sds,n_hidden_layers=2,dec_distrib="No
   
   if (sigma=="relu"): act_fun=torch.nn.ReLU()
   elif (sigma=="elu"): act_fun=torch.nn.ELU()
+  elif (sigma=="tanh"): act_fun=torch.nn.Tanh()
+  elif (sigma=="sigmoid"): act_fun=torch.nn.Sigmoid()
   
   def network_maker(act_fun, n_hidden_layers, in_h, h, out_h, dropout=False):
     if n_hidden_layers==0:
@@ -1774,8 +1779,15 @@ def run_MIWAE(data,Missing,norm_means,norm_sds,n_hidden_layers=2,dec_distrib="No
         print('-----')
     saved_model={'encoder': encoder, 'decoder': decoder}
     mse_train={'miss':mse_train_miss,'obs':mse_train_obs}
+    L1_miss = np.mean(np.abs(xhat-(xfull*norm_sds+norm_means))[~mask])
+    L1_obs = np.mean(np.abs(xhat-(xfull*norm_sds+norm_means))[mask])
+    print("L1 (missing):")
+    print(L1_miss)
+    print("L1 (observed):")
+    print(L1_obs)
+    L1s = {'miss': L1_miss, 'obs': L1_obs}
     train_params = {'h':h, 'sigma':sigma, 'bs':bs, 'n_epochs':n_epochs, 'lr':lr, 'niw':niw, 'dim_z':dim_z, 'L':L, 'dec_distrib':dec_distrib, 'n_hidden_layers': n_hidden_layers}
-    return {'train_params':train_params,'loss_fits':loss_fits,'xhat_fits':xhat_fits,'saved_model': saved_model,'zgivenx_flat': zgivenx_flat,'MIWAE_LB_epoch': MIWAE_LB_epoch,'time_train': time_train,'time_impute': time_impute,'imp_weights': imp_weights,'MSE': mse_train, 'xhat': xhat, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds}
+    return {'train_params':train_params,'loss_fits':loss_fits,'xhat_fits':xhat_fits,'saved_model': saved_model,'zgivenx_flat': zgivenx_flat,'MIWAE_LB_epoch': MIWAE_LB_epoch,'time_train': time_train,'time_impute': time_impute,'imp_weights': imp_weights,'MSE': mse_train, 'xhat': xhat, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds,'L1s': L1s}
   else:
     # validating (hyperparameter values) or testing
     encoder=saved_model['encoder']
@@ -1853,6 +1865,13 @@ def run_MIWAE(data,Missing,norm_means,norm_sds,n_hidden_layers=2,dec_distrib="No
       print('Missing MSE  %g' %err['miss'])
       print('-----')
     mse_test={'miss':err['miss'],'obs':err['obs']}
+    L1_miss = np.mean(np.abs(xhat-(xfull*norm_sds+norm_means))[~mask])
+    L1_obs = np.mean(np.abs(xhat-(xfull*norm_sds+norm_means))[mask])
+    print("L1 (missing):")
+    print(L1_miss)
+    print("L1 (observed):")
+    print(L1_obs)
+    L1s = {'miss': L1_miss, 'obs': L1_obs}
     saved_model={'encoder': encoder, 'decoder': decoder}
-    return {'loss_fits':loss_fits,'xhat_fits':xhat_fits,'zgivenx_flat': zgivenx_flat,'saved_model': saved_model,'LB': MIWAE_LB,'time_impute': time_impute,'imp_weights': imp_weights,'MSE': mse_test, 'xhat': xhat, 'xfull': xfull, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds}  
+    return {'loss_fits':loss_fits,'xhat_fits':xhat_fits,'zgivenx_flat': zgivenx_flat,'saved_model': saved_model,'LB': MIWAE_LB,'time_impute': time_impute,'imp_weights': imp_weights,'MSE': mse_test, 'xhat': xhat, 'xfull': xfull, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds,'L1s': L1s}  
 
