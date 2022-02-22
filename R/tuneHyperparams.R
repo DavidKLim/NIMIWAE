@@ -226,7 +226,8 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
     opt_params = opt_train$'train_params' #; saved_model = opt_train$'saved_model'
 
     # batch_size = opt_params$'bs'   # runs out of memory: taking more samples --> need smaller batch size
-    test_bs = 500L
+    # test_bs = 500L
+    test_bs = as.integer(opt_params$'bs'/10)
     opt_params$'test_bs' = test_bs
 
     # assuming niws is not tuned. use user-custom L and M (niw in training/validation time set to 5 for computational efficiency)

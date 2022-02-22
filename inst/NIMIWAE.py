@@ -1032,7 +1032,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         if learn_r and not ignorable:
           print("Decoder_r bias:")
           print(decoder_r[0].bias)
-          print("Decoder_r weights (" + str() + "cols = input, " + str() + "rows = output) first 4:")
+          print("Decoder_r weights (" + str(num_dec_r_params) + "cols = input, " + str(p_miss) + "rows = output) first 4:")
           print(decoder_r[0].weight[0:min(4,p_miss),0:min(4,num_dec_r_params)])
         t0_impute=time.time()
         if (not draw_xmiss) and (not ignorable): batches_full = np.array_split(xfull,n/impute_bs)
