@@ -43,12 +43,12 @@
 tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,data_types_0, Missing, g,
                            rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, Cs, ignorable=F, covars_r=rep(1,ncol(data)),
                            arch="IWAE", draw_xmiss=T,  # for NIMIWAE: whether each NN is optimized separately, architecture: VAE or IWAE
-                           sigma="elu", h=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=NULL, bs=1000L, lr=c(0.001,0.01),
+                           sigma="elu", h=c(128L,64L), h_r=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=NULL, bs=1000L, lr=c(0.001,0.01),
                            dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))), niws=5L, n_imputations=5L, n_epochs=2002L,
                            data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
                            MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T, early_stop = T
 ){
-  h = as.integer(h); n_hidden_layers = as.integer(n_hidden_layers)
+  h = as.integer(h); h_r = as.integer(h_r); n_hidden_layers = as.integer(n_hidden_layers)
   if(!is.null(n_hidden_layers_r0)[1]){n_hidden_layers_r0 = as.integer(n_hidden_layers_r0)}
   bs = as.integer(bs); niws = as.integer(niws); n_imputations = as.integer(n_imputations); n_epochs = as.integer(n_epochs)
   if(any(dim_z<=0)){dim_z[dim_z<=0]=1L}
@@ -122,14 +122,15 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
     if(arch=="VAE"){ niws=1L }
     #M=1L
 
-    # sparse="none"; dropout_pct=NULL; L1_weights=c(0.001,0.01); L2_weight=0
-    sparse="none"; dropout_pct=NULL; L1_weights=0; L2_weights=0
-    #sparse="L1"; L1_weights=c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8); L2_weight=0; dropout_pct=NULL  # D2
+    sparse="none"; dropout_pct=0; L1_weights=0; L2_weights=0
+    # sparse="L1"; L1_weights=c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8); L2_weights=0; dropout_pct=0  # Exp 1
+    # sparse="L2"; L1_weights=0; L2_weights=c(0, 0.004, 0.04, 0.1, 0.4, 0.8); dropout_pct=0  # Exp 6
+    # sparse="dropout"; L1_weights=0; L2_weights=0; dropout_pct=0.9 # Exp 3
 
     # sparse="dropout"; dropout_pct=50; L1_weights=0; L2_weight=0
-    # sparse="L1"; L1_weights=c(0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5); L2_weight=0; dropout_pct=NULL  # D3
-    # sparse="L1"; L1_weights=c(0.05, 0.1, 0.2, 0.3, 0.4, 0.5); L2_weight=0; dropout_pct=NULL  # D4
-    # sparse="L1"; L1_weights=c(0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5); L2_weight=4e-3; dropout_pct=NULL  # D5: Weight decay of 4e-3: https://dejanbatanjac.github.io/2019/07/02/Impact-of-WD.html, https://arxiv.org/pdf/1803.09820.pdf
+    # sparse="L1"; L1_weights=c(0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5); L2_weight=0; dropout_pct=0  # D3
+    # sparse="L1"; L1_weights=c(0.05, 0.1, 0.2, 0.3, 0.4, 0.5); L2_weight=0; dropout_pct=0  # D4
+    # sparse="L1"; L1_weights=c(0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5); L2_weight=4e-3; dropout_pct=0  # D5: Weight decay of 4e-3: https://dejanbatanjac.github.io/2019/07/02/Impact-of-WD.html, https://arxiv.org/pdf/1803.09820.pdf
     # dim_zs = c(64L,128L)    # D6: way overparametrized Z
 
     if(ignorable){n_hidden_layers_r0=0L}  # no need to tune this parameter if ignorable model..
@@ -137,20 +138,30 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
     if(is.null(n_hidden_layers_r0)){ n_hidden_layers_r = 999L # dummy set it to 999. replace in for loop with value of n_hidden_layers
     } else{n_hidden_layers_r = n_hidden_layers_r0}   # if not null, set to specified value(s)
 
-    n_combs_params=length(h)*length(bs)*length(lr)*length(dim_z)*length(niws)*length(n_epochs)*length(n_hidden_layers)*length(n_hidden_layers_r)*length(L1_weights)
-    LBs_trainVal = matrix(NA,nrow=n_combs_params,ncol=8+3+2)   # contain params, trainMSE,valMSE,trainLB,valLB
-    colnames(LBs_trainVal) = c("h","bs","lr","dim_z","niw","n_epoch","nhls","nhls_r","L1_weights",
+    # n_combs_params=length(h)*length(h_r)*length(bs)*length(lr)*length(dim_z)*length(niws)*length(n_epochs)*length(n_hidden_layers)*length(n_hidden_layers_r)*length(L1_weights)*length(L2_weights)
+    length_nodes_HLs = (length(n_hidden_layers)-1)*length(h)+1
+    length_nodes_HLs_r = (length(n_hidden_layers_r)-1)*length(h_r)+1    # don't have to tune h when nhl = 0
+    n_combs_params = length(bs)*length(lr)*length(dim_z)*length(niws)*length(n_epochs)* (length_nodes_HLs*length_nodes_HLs_r) *length(L1_weights)*length(L2_weights)
+    LBs_trainVal = matrix(NA,nrow=n_combs_params,ncol=8+3+2+1)   # contain params, trainMSE,valMSE,trainLB,valLB
+    colnames(LBs_trainVal) = c("bs","lr","dim_z","niw","n_epoch","nhls","nhls_r","h","h_r","L1_weights",
                                "LB_train","L1_train","LB_valid","L1_valid")
     index=1
-    for(i in 1:length(h)){for(j in 1:length(bs)){for(k in 1:length(lr)){for(l in 1:length(dim_z)){
+    for(j in 1:length(bs)){for(k in 1:length(lr)){for(l in 1:length(dim_z)){
       for(m in 1:length(niws)){for(mm in 1:length(n_epochs)){for(nn in 1:length(n_hidden_layers)){
-        for(nr in 1:length(n_hidden_layers_r)){for(o1 in 1:length(L1_weights)){for(o2 in 1:length(L2_weights)){        # h1: encoder     q(z|xo (,r))
+        for(nr in 1:length(n_hidden_layers_r)){
+
+          ### if #HL = 0, no need to tune h ###
+          if(n_hidden_layers[nn]==0){h0=0L} else{h0=h}
+          if(n_hidden_layers_r[nr]==0){h_r0=0L} else{h_r0=h_r}
+
+          for(i in 1:length(h0)){for(ii in 1:length(h_r0)){
+            for(o1 in 1:length(L1_weights)){for(o2 in 1:length(L2_weights)){        # h1: encoder     q(z|xo (,r))
         # h2: decoder_x   p(x|z)
         # h3: decoder_r   p(r|x (,z))
         # h4: decoder_xr  p(x|z,r)
         impute_bs = bs[j] # batch_size in imputation same as batch_size in training
 
-        print(paste("h:",h[i],", bs:",bs[j],", lr:",lr[k],", dim_z:",dim_z[l],", niw:",niws[m],", n_epochs: ",n_epochs[mm],", n_hls: ",n_hidden_layers[nn],", n_hls_r: ",n_hidden_layers_r[nr],", L1_weight: ", L1_weights[o1], ", L2_weight: ", L2_weights[o2], sep=""))
+        print(paste("h:",h0[i],", bs:",bs[j],", lr:",lr[k],", dim_z:",dim_z[l],", niw:",niws[m],", n_epochs: ",n_epochs[mm],", n_hls: ",n_hidden_layers[nn],", n_hls_r: ",n_hidden_layers_r[nr],", L1_weight: ", L1_weights[o1], ", L2_weight: ", L2_weights[o2], sep=""))
         print(paste("M:", n_imputations))
 
         warm_started_model=NULL; warm_start=F
@@ -171,7 +182,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                         covars_miss=NULL,covars_miss_val=NULL,impute_bs=impute_bs,
                         arch=arch, draw_xmiss=draw_xmiss,
                         #add_miss_term=add_miss_term,#draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
-                        pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=beta,beta_anneal_rate=beta_anneal_rate,
+                        pre_impute_value=pre_impute_value,h1=h0[i],h2=h0[i],h3=h_r0[ii],h4=h0[i], #beta=beta,beta_anneal_rate=beta_anneal_rate,
                         phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, early_stop = early_stop, train=1L,
                         # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
                         sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niw, dim_z=dim_z[l], L=niw, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
@@ -184,7 +195,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                         covars_miss=NULL,covars_miss_val=NULL,impute_bs=impute_bs,
                         arch=arch, draw_xmiss=draw_xmiss,
                         #add_miss_term=add_miss_term,draw_xobs=draw_xobs,draw_xmiss=draw_xmiss,
-                        pre_impute_value=pre_impute_value,h1=h[i],h2=h[i],h3=h[i],h4=h[i], #beta=1,beta_anneal_rate=0,
+                        pre_impute_value=pre_impute_value,h1=h0[i],h2=h0[i],h3=h_r0[ii],h4=h0[i], #beta=1,beta_anneal_rate=0,
                         phi0=phi0, phi=phi, warm_start=F, saved_model=res_train$'saved_model', early_stop = F, train=0L,
                         # sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
                         sigma=sigma, bs = bs[j], n_epochs=test_epochs, lr=lr[k], niw=niw, dim_z=dim_z[l], L=niw, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
@@ -193,11 +204,11 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
         # print("all_params")
         # print(res_valid$all_params)
 
-        print(c(h[i],bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
-                n_hidden_layers[nn],n_hidden_layers_r[nr],L1_weights[o1],L2_weights[o2],
+        print(c(bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
+                n_hidden_layers[nn],n_hidden_layers_r[nr],h0[i],h_r0[ii],L1_weights[o1],L2_weights[o2],
                 res_train$'LB',res_train$'L1s'$'miss',res_valid$'LB',res_valid$'L1s'$'miss'))
-        LBs_trainVal[index,]=c(h[i],bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
-                               n_hidden_layers[nn],n_hidden_layers_r[nr],L1_weights[o1],
+        LBs_trainVal[index,]=c(bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
+                               n_hidden_layers[nn],n_hidden_layers_r[nr],h0[i],h_r0[ii],L1_weights[o1],
                                res_train$'LB',res_train$'L1s'$'miss',res_valid$'LB',res_valid$'L1s'$'miss')
         save(LBs_trainVal, file=sprintf("%s/LBs_trainVal",dir_name))
 
@@ -215,7 +226,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
         rm(res_train)
         rm(res_valid)
         index=index+1
-      }}}}}}}}}}
+      }}}}}}}}}}}
     #opt_id=which.min(LBs)
     #opt_params=list_train[[opt_id]]$'train_params'
     print("Hyperparameter tuning complete.")

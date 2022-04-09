@@ -36,7 +36,7 @@
 #'
 #' @export
 NIMIWAE = function(data, dataset="", data_types, Missing, g=NULL, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE", draw_xmiss=T,
-                   hyperparameters=list(sigma="elu", h=c(64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=c(0L,1L),
+                   hyperparameters=list(sigma="elu", h=c(64L), h_r=64L, n_hidden_layers=c(1L,2L), n_hidden_layers_r0=c(0L,1L),
                                         bs=c(1000L), lr=c(0.001,0.01), dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))),
                                         niw=5L, n_imputations=5L, n_epochs=2002L), save_imps=F, dir_name=".", normalize=T
                    ){

@@ -186,7 +186,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   elif (sigma=="elu"): act_fun=torch.nn.ELU()
   elif (sigma=="tanh"): act_fun=torch.nn.Tanh()
   elif (sigma=="sigmoid"): act_fun=torch.nn.Sigmoid()
-  def network_maker(act_fun, n_hidden_layers, in_h, h, out_h, bias=True, dropout=False):
+  def network_maker(act_fun, n_hidden_layers, in_h, h, out_h, bias=True, dropout=False, init="orthogonal"):
+    # dropout=True   ### COMMENT OUT
     # create NN layers
     if n_hidden_layers==0:
       layers = [ nn.Linear(in_h, out_h, bias), ]
@@ -201,39 +202,43 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     
     # insert dropout layer (if applicable)
     if dropout:
-      layers.insert(0, nn.Dropout())
+      layers.insert(0, nn.Dropout(p=dropout_pct))
     
     # create NN
     model = nn.Sequential(*layers)
     
     # initialize weights
     def weights_init(layer):
-      if type(layer) == nn.Linear: torch.nn.init.orthogonal_(layer.weight)
+      if init=="normal":
+        # if type(layer) == nn.Linear: torch.nn.init.normal_(layer.weight, mean=0, std=1)  # default std.normal
+        if type(layer) == nn.Linear: torch.nn.init.normal_(layer.weight, mean=0, std=10)  # default std.normal
+      elif init=="orthogonal":
+        if type(layer) == nn.Linear: torch.nn.init.orthogonal_(layer.weight)
+      elif init=="uniform":
+        if type(layer) == nn.Linear: torch.nn.init.uniform_(layer.weight, a=-2, b=2)
     model.apply(weights_init)
     
     return model
   
-  # if (dec_distrib=="Normal"): num_dec_params=2
-  # elif (dec_distrib=="StudentT"): num_dec_params=3
-  
   num_enc_params = p + p*(rdeponz==True)
   # num_enc_params = 2*p
-
-  encoder = network_maker(act_fun, n_hidden_layers, num_enc_params, h1, 2*d, True, False).cuda()
+  
+  init1 = "orthogonal"  # initialization method for all weights except Decoder_r
+  encoder = network_maker(act_fun, n_hidden_layers, num_enc_params, h1, 2*d, True, False, init1).cuda()
   decoders = {}
   if exists_types[0]:
-    decoders['real'] = network_maker(act_fun, n_hidden_layers, d, h2, 2*p_real, True, False).cuda()
+    decoders['real'] = network_maker(act_fun, n_hidden_layers, d, h2, 2*p_real, True, False, init1).cuda()
     # decoders['real'] = network_maker(act_fun, n_hidden_layers, d+p, h2, 2*p_real, True, False).cuda()
   if exists_types[1]:
-    decoders['count'] = network_maker(act_fun, n_hidden_layers, d, h2, 2*p_count, True, False).cuda()
+    decoders['count'] = network_maker(act_fun, n_hidden_layers, d, h2, 2*p_count, True, False, init1).cuda()
     # decoders['count'] = network_maker(act_fun, n_hidden_layers, d+p, h2, 2*p_count, True, False).cuda()
   if exists_types[2]:
-    decoders['pos'] = network_maker(act_fun, n_hidden_layers, d, h2, 2*p_pos, True, False).cuda()
+    decoders['pos'] = network_maker(act_fun, n_hidden_layers, d, h2, 2*p_pos, True, False, init1).cuda()
     # decoders['pos'] = network_maker(act_fun, n_hidden_layers, d+p, h2, 2*p_pos, True, False).cuda()
   if exists_types[3]:
     decoders['cat']=[]
     for ii in range(0, p_cat):
-      decoders['cat'].append( network_maker(act_fun, n_hidden_layers, d, h2, int(Cs[ii]), True, False).cuda() )
+      decoders['cat'].append( network_maker(act_fun, n_hidden_layers, d, h2, int(Cs[ii]), True, False, init1).cuda() )
       # decoders['cat'].append( network_maker(act_fun, n_hidden_layers, d+p, h2, int(Cs[ii]), True, False).cuda() )
     
   if ignorable: p2=p+d         # if ignorable, only feed xo and z into q(xm|xo,z), since xm indep of r
@@ -247,24 +252,95 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   # encoder_xr = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p, True, False)
   encoders_xr = {}
   if exists_types[0]:
-    encoders_xr['real'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_real, True, False).cuda()
+    encoders_xr['real'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_real, True, False, init1).cuda()
   if exists_types[1]:
-    encoders_xr['count'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_count, True, False).cuda()
+    encoders_xr['count'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_count, True, False, init1).cuda()
   if exists_types[2]:
-    encoders_xr['pos'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_pos, True, False).cuda()
+    encoders_xr['pos'] = network_maker(act_fun, n_hidden_layers, p2, h4, 2*p_pos, True, False, init1).cuda()
   if exists_types[3]:
     encoders_xr['cat'] = []
     for ii in range(0,p_cat):
-      encoders_xr['cat'].append(network_maker(act_fun, n_hidden_layers, p2, h4, int(Cs[ii]), True, False).cuda())
+      encoders_xr['cat'].append(network_maker(act_fun, n_hidden_layers, p2, h4, int(Cs[ii]), True, False, init1).cuda())
   
+  
+  # init2 = "normal"  # initialization method for Decoder_r weights
+  # init2 = "uniform"
+  init2 = "orthogonal"
+  # init2 = "custom"   # draw from (-2, 2) randomly
   if not ignorable:
     # pr: number of features of data included as covariates in Decoder 2
     # pr1: number of additional covariates (like class) included as covariates in Decoder 2
     if (rdeponz): num_dec_r_params = pr + pr1 + d
     else: num_dec_r_params = pr + pr1; num_enc_params = p
     if learn_r:
-      decoder_r = network_maker(act_fun, n_hidden_layers_r, num_dec_r_params, h3, p_miss, True, (sparse=="dropout") ).cuda()
-
+      decoder_r = network_maker(act_fun, n_hidden_layers_r, num_dec_r_params, h3, p_miss, True, (sparse=="dropout") , init2).cuda()
+  
+  ######### CUSTOM INITIALIZATION OF WEIGHTS IN DECODER_R ###########
+  ### same init for observed, missing covariates' weights set to -2
+  # weight_init_value = -2
+  # with torch.no_grad():
+  #   # ### change just missing features
+  #   # if sparse=="dropout": decoder_r[1].weight[:,~full_obs_ids] = weight_init_value
+  #   # else: decoder_r[0].weight[:,~full_obs_ids] = weight_init_value
+  #   ### change all features in decoder_r
+  #   if sparse=="dropout": decoder_r[1].weight[:,:] = weight_init_value
+  #   else: decoder_r[0].weight[:,:] = weight_init_value
+  
+  ######################
+  ######################
+  ######################
+  ### Uniform/Bernoulli/Normal RV to sample randomly from {-2, 2}
+  # if init_r == "uniform"
+  # dist = torch.distributions.Bernoulli(torch.Tensor([0.5]))
+  dist = torch.distributions.Uniform(torch.Tensor([-2]), torch.Tensor([2]))
+  # dist = torch.distributions.Normal(torch.Tensor([0]), torch.Tensor([1]))
+  if sparse=="dropout": sh1, sh2 = decoder_r[1].weight.shape
+  else: sh1, sh2 = decoder_r[0].weight.shape
+  # custom_weights = (dist.sample([sh1, sh2]).reshape([sh1,sh2])*10 - 5).cuda()  # -5 or 5
+  # custom_weights = (dist.sample([sh1, sh2]).reshape([sh1,sh2])*4 - 2).cuda()  # -2 or 2
+  custom_weights = (dist.sample([sh1, sh2]).reshape([sh1,sh2])).cuda()  # N(0,1) or Unif(-2,2)
+  with torch.no_grad():
+    if sparse=="dropout": decoder_r[1].weight = torch.nn.Parameter(custom_weights)
+    else: decoder_r[0].weight = torch.nn.Parameter(custom_weights)
+  #######################
+  #######################
+  #######################
+  
+  ### observed covariates' weights set to 0, missing covariates' weights set to 2
+  # if sparse=="dropout": sh1, sh2 = decoder_r[1].weight.shape
+  # else: sh1, sh2 = decoder_r[0].weight.shape
+  # custom_weights = torch.zeros([sh1,sh2])
+  # custom_weights[:,~full_obs_ids] = weight_init_value
+  # custom_weights.cuda()
+  # with torch.no_grad():
+  #   if sparse=="dropout": decoder_r[1].weight = torch.nn.Parameter(custom_weights)
+  #   else: decoder_r[0].weight = torch.nn.Parameter(custom_weights)
+  
+  # ######### MULTIPLYING MAGNITUDES OF INIT WEIGHTS IN DECODER_R #########
+  # weight_mult_value = 10
+  # with torch.no_grad():
+  #   ## Multiplying all weights
+  #   # if sparse=="dropout": decoder_r[1].weight = torch.nn.Parameter(weight_mult_value * decoder_r[1].weight)
+  #   # else: decoder_r[0].weight = torch.nn.Parameter(weight_mult_value * decoder_r[0].weight)
+  #   ## Multiplying just missing features' weights
+  #   if sparse=="dropout": decoder_r[1].weight[:,~full_obs_ids] = weight_mult_value * decoder_r[1].weight[:,~full_obs_ids]
+  #   else: decoder_r[0].weight[:,~full_obs_ids] = weight_mult_value * decoder_r[0].weight[:,~full_obs_ids]
+  
+  ######### MULTIPLYING MAGNITUDES OF INIT WEIGHTS IN DECODER_R #########
+  # weight_add_value = -3
+  # with torch.no_grad():
+  #   ## Adding all weights
+  #   # if sparse=="dropout": decoder_r[1].weight = torch.nn.Parameter(weight_add_value * decoder_r[1].weight)
+  #   # else: decoder_r[0].weight = torch.nn.Parameter(weight_add_value * decoder_r[0].weight)
+  #   ## Adding just missing features' weights
+  #   if sparse=="dropout": decoder_r[1].weight[:,~full_obs_ids] = weight_add_value + decoder_r[1].weight[:,~full_obs_ids]
+  #   else: decoder_r[0].weight[:,~full_obs_ids] = weight_add_value + decoder_r[0].weight[:,~full_obs_ids]
+    
+  
+  print("Median, min, max):")
+  print(torch.median(decoder_r[0].weight))
+  print(torch.min(decoder_r[0].weight))
+  print(torch.max(decoder_r[0].weight))
 
   def forward(niw, iota_xfull, iota_x, mask, batch_size, tiledmask, tiled_iota_x, tiled_iota_xfull, tiled_tiled_covars_miss, temp):
     tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
@@ -417,9 +493,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     # params_z={'mean':out_encoder[..., :d], 'sd':torch.nn.Softplus()(out_encoder[..., d:(2*d)])+0.001}
     # return p_rgivenx, pxgivenz, qxgivenzr, p_z, q_zgivenxobs, params_x, params_xr, params_r, params_z, zgivenx_flat, xgivenzr
     return p_rgivenx, p_xs, q_xs, p_z, q_zgivenxobs, params_x, params_xr, params_r, params_z, zgivenx_flat, xincluded
-
   ############################## END FORWARD #####################
-
   # Functions to calculate nimiwae loss and impute using nimiwae
   def nimiwae_loss(iota_xfull, iota_x, mask, mask0, covar_miss, temp):
     iota_x[:,ids_cat] = torch.clamp(iota_x[:,ids_cat], min=0.0001, max=0.9999)
@@ -663,9 +737,10 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     return {'xm': xm.detach(), 'imp_weights': imp_weights.detach(), 'xms': xms.detach(),'zgivenx': zgivenx_flat.reshape([L,batch_size,d]).detach()}
   
   # initialize weights
-  def weights_init(layer):
-    if type(layer) == nn.Linear: torch.nn.init.orthogonal_(layer.weight)
-    # if type(layer) == nn.Linear: torch.nn.init.xavier_normal_(layer.weight)   # better for sigmoid/tanh act fun's?
+  # def weights_init(layer):
+  #   if type(layer) == nn.Linear: torch.nn.init.normal_(layer.weight, mean=0, std=1)  # default std.normal
+  #   if type(layer) == nn.Linear: torch.nn.init.orthogonal_(layer.weight)
+  #   if type(layer) == nn.Linear: torch.nn.init.xavier_normal_(layer.weight)   # better for sigmoid/tanh act fun's?
   
   # Define ADAM optimizer
   # if not ignorable:
@@ -684,21 +759,21 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     
   
   params = list(encoder.parameters())
-  if exists_types[0]: params = params + list(decoders['real'].parameters()); decoders['real'].apply(weights_init)
-  if exists_types[1]: params = params + list(decoders['count'].parameters()); decoders['count'].apply(weights_init)
-  if exists_types[2]: params = params + list(decoders['pos'].parameters()); decoders['pos'].apply(weights_init)
+  if exists_types[0]: params = params + list(decoders['real'].parameters())#; decoders['real'].apply(weights_init)
+  if exists_types[1]: params = params + list(decoders['count'].parameters())#; decoders['count'].apply(weights_init)
+  if exists_types[2]: params = params + list(decoders['pos'].parameters())#; decoders['pos'].apply(weights_init)
   if exists_types[3]:
     for ii in range(0, p_cat):
-      params = params + list(decoders['cat'][ii].parameters()); decoders['cat'][ii].apply(weights_init)
+      params = params + list(decoders['cat'][ii].parameters())#; decoders['cat'][ii].apply(weights_init)
   
   if learn_r and not ignorable:
     params = params + list(decoder_r.parameters())
-  if exists_types[0]: params = params + list(encoders_xr['real'].parameters()); encoders_xr['real'].apply(weights_init)
-  if exists_types[1]: params = params + list(encoders_xr['count'].parameters()); encoders_xr['count'].apply(weights_init)
-  if exists_types[2]: params = params + list(encoders_xr['pos'].parameters()); encoders_xr['pos'].apply(weights_init)
+  if exists_types[0]: params = params + list(encoders_xr['real'].parameters())#; encoders_xr['real'].apply(weights_init)
+  if exists_types[1]: params = params + list(encoders_xr['count'].parameters())#; encoders_xr['count'].apply(weights_init)
+  if exists_types[2]: params = params + list(encoders_xr['pos'].parameters())#; encoders_xr['pos'].apply(weights_init)
   if exists_types[3]:
     for ii in range(0, p_cat):
-      params = params + list(encoders_xr['cat'][ii].parameters()); encoders_xr['cat'][ii].apply(weights_init)
+      params = params + list(encoders_xr['cat'][ii].parameters())#; encoders_xr['cat'][ii].apply(weights_init)
 
   optimizer = optim.Adam(params, lr=lr, weight_decay=L2_weight)
 
@@ -735,7 +810,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   # early_stop_check_epochs = 500001       # relative change in val_LB checked across this many epochs  #turned off
   early_stop_check_epochs = 0       # number of epochs to let run before checking early stop
   early_stop_tol = 1e-4               # tolerance of change in val_LB across early_stop_check_epochs
-  patience_index=0; patience=50
+  patience_index=0; patience=100
   opt_model = {}
   opt_val_LB = -sys.float_info.max
   
@@ -875,7 +950,11 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
 
         # Impose L1 thresholding to 0 for weight if norm < 1e-2
         if learn_r and not ignorable and L1_weight>0: #or L2_weight>0:
-          with torch.no_grad(): decoder_r[0].weight[torch.abs(decoder_r[0].weight) < L1_weight] = 0           ####################### NEW
+          if sparse!="dropout":
+            with torch.no_grad(): decoder_r[0].weight[torch.abs(decoder_r[0].weight) < L1_weight] = 0           ####################### NEW
+          else:
+            with torch.no_grad(): decoder_r[1].weight[torch.abs(decoder_r[1].weight) < L1_weight] = 0           ####################### NEW
+
       
       # print("params_xr['cat'][0] (first 4)")
       # print(params_xr['cat'][0][:4])
@@ -890,7 +969,10 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
 
       #NIMIWAE_LB=(-np.log(K) - np.log(M) - loss_fit['neg_bound'].cpu().data.numpy())
       if learn_r and not ignorable and L1_weight>0: #or L2_weight>0:
-        with torch.no_grad(): decoder_r[0].weight[torch.abs(decoder_r[0].weight) < L1_weight] = 0
+        if sparse!="dropout":
+          with torch.no_grad(): decoder_r[0].weight[torch.abs(decoder_r[0].weight) < L1_weight] = 0
+        else:
+          with torch.no_grad(): decoder_r[1].weight[torch.abs(decoder_r[1].weight) < L1_weight] = 0
       
       total_loss = -np.sum(batches_loss)   # negative of the total loss (summed over K & bs)
       if(arch=="VAE"):
@@ -1030,10 +1112,16 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         ### Now we do the imputation
 
         if learn_r and not ignorable:
-          print("Decoder_r bias:")
-          print(decoder_r[0].bias)
-          print("Decoder_r weights (" + str(num_dec_r_params) + "cols = input, " + str(p_miss) + "rows = output) first 4:")
-          print(decoder_r[0].weight[0:min(4,p_miss),0:min(4,num_dec_r_params)])
+          if sparse!="dropout":
+            print("Decoder_r bias:")
+            print(decoder_r[0].bias)
+            print("Decoder_r weights (" + str(num_dec_r_params) + "cols = input, " + str(p_miss) + "rows = output) first 4:")
+            print(decoder_r[0].weight[0:min(4,p_miss),0:min(4,num_dec_r_params)])
+          else:
+            print("Decoder_r bias:")
+            print(decoder_r[1].bias)
+            print("Decoder_r weights (" + str(num_dec_r_params) + "cols = input, " + str(p_miss) + "rows = output) first 4:")
+            print(decoder_r[1].weight[0:min(4,p_miss),0:min(4,num_dec_r_params)])
         t0_impute=time.time()
         if (not draw_xmiss) and (not ignorable): batches_full = np.array_split(xfull,n/impute_bs)
         batches_data = np.array_split(xhat_0, n/impute_bs)
@@ -1468,7 +1556,9 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
     if (not ignorable) and learn_r: all_params['r'] = params_r
     all_params['xm'] = params_xr
     
-    if learn_r and not ignorable: decoder_r_weights = (decoder_r[0].weight).cpu().data.numpy()
+    if learn_r and not ignorable:
+      if sparse!="dropout": decoder_r_weights = (decoder_r[0].weight).cpu().data.numpy()
+      else: decoder_r_weights = (decoder_r[1].weight).cpu().data.numpy()
     else: decoder_r_weights=None
     # omitted saved_model from output when test time
     return {'all_params': all_params,'decoder_r_weights': decoder_r_weights,'loss_fits':loss_fits, 'xhat_fits':xhat_fits,'zgivenx': zgivenx,'LB': NIMIWAE_LB,'time_impute': time_impute, 'xhat': xhat, 'xfull': xfull, 'mask': mask, 'norm_means':norm_means, 'norm_sds':norm_sds, 'covars_r':covars_r,'L1s':L1s}
