@@ -165,26 +165,157 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
 #' @export
 read_data = function(dataset=c("Physionet_mean","Physionet_all","HEPMASS","POWER","GAS","IRIS","RED","WHITE","YEAST","BREAST","CONCRETE","BANKNOTE"), ratio=c(8,2), g_seed = 333){
   if(grepl("Physionet",dataset)){
-    np <- reticulate::import("numpy")
-    npz1 <- np$load("data/PhysioNet2012/physionet.npz")
-    classes=c(npz1$f$y_train, npz1$f$y_val, npz1$f$y_test)
-    params=NULL
-    if(strsplit(dataset,"_")[[1]][2] == "mean"){
-      # dataset=="Physionet_mean"
-      data = rbind(apply(npz1$f$x_train_miss, c(1,3), mean),
-                   apply(npz1$f$x_val_miss, c(1,3), mean),
-                   apply(npz1$f$x_test_miss, c(1,3), mean))
-    } else if(strsplit(dataset,"_")[[1]][2] == "all"){
-      # dataset=="Physionet_all"
+    # np <- reticulate::import("numpy")
+    # npz1 <- np$load("data/PhysioNet2012/physionet.npz")
+    # classes=c(npz1$f$y_train, npz1$f$y_val, npz1$f$y_test)
+    # params=NULL
+    # if(strsplit(dataset,"_")[[1]][2] == "mean"){
+    #   # dataset=="Physionet_mean"
+    #   data = rbind(apply(npz1$f$x_train_miss, c(1,3), mean),
+    #                apply(npz1$f$x_val_miss, c(1,3), mean),
+    #                apply(npz1$f$x_test_miss, c(1,3), mean))
+    # } else if(strsplit(dataset,"_")[[1]][2] == "all"){
+    #   # dataset=="Physionet_all"
+    #   library(abind)
+    #   X3D = aperm(abind(npz1$f$x_train_miss,
+    #                     npz1$f$x_val_miss,
+    #                     npz1$f$x_test_miss,
+    #                     along=1),
+    #               c(2,1,3))                                             # switch dims so 48 time points is first dim
+    #   data = matrix(X3D, nrow=dim(X3D)[1]*dim(X3D)[2], ncol=dim(X3D)[3])   # stack time series data: 1st subject is 1st - 48th observations, 2nd subj is 49th - 96th, ...
+    #   classes=rep(classes, each = 48)
+    # }
+
+    # np <- import("numpy")
+    # npz1 <- np$load("data/PhysioNet2012/physionet.npz")
+    if(!dir.exists("data/predicting-mortality-of-icu-patients-the-physionet-computing-in-cardiology-challenge-2012-1.0.0")){
+      dir.create("data/predicting-mortality-of-icu-patients-the-physionet-computing-in-cardiology-challenge-2012-1.0.0",recursive=T)
+      # if training set doesn't exist, assume it hasn't been downloaded
+      setwd("data")
+
+      print("Downloading Physionet 2012 Challenge Dataset...")
+      download.file("https://physionet.org/static/published-projects/challenge-2012/predicting-mortality-of-icu-patients-the-physionet-computing-in-cardiology-challenge-2012-1.0.0.zip",
+                    destfile="predicting-mortality-of-icu-patients-the-physionet-computing-in-cardiology-challenge-2012-1.0.0.zip")
+
+      print("Unzipping compressed directory...")
+      unzip("predicting-mortality-of-icu-patients-the-physionet-computing-in-cardiology-challenge-2012-1.0.0.zip")
+
+      print("Removing zip file...")
+      file.remove("predicting-mortality-of-icu-patients-the-physionet-computing-in-cardiology-challenge-2012-1.0.0.zip")
+
+      if(!file.exists("set_c_merged.h5")){
+        print("Merging into one dataset for summary table (Table 1)...")
+        source_python("raw_data_gather.py")
+      }
+
+      setwd("predicting-mortality-of-icu-patients-the-physionet-computing-in-cardiology-challenge-2012-1.0.0")
+
+      ###########################################################################
+      # Creating Table 1 (done first time runComparisons.R is run)
+      np <- reticulate::import("numpy")
+
+      features = c('ALP','ALT','AST','Albumin','BUN','Bilirubin',
+                   'Cholesterol','Creatinine','DiasABP','FiO2','GCS',
+                   'Glucose','HCO3','HCT','HR','K','Lactate','MAP', 'MechVent',
+                   'Mg','NIDiasABP','NIMAP','NISysABP','Na','PaCO2',
+                   'PaO2','Platelets','RespRate','SaO2','SysABP','Temp',
+                   'TroponinI','TroponinT','Urine','WBC','pH')
+
+      npz_trainval <- np$load("data_train_val.npz")
+      npz_test <- np$load("data_test.npz")
+      d_train = npz_trainval$f$x_train; d_val = npz_trainval$f$x_val; d_test = npz_test$f$x_test
+      M_train = npz_trainval$f$m_train; M_val = npz_trainval$f$m_val; M_test = npz_test$f$m_test
+
       library(abind)
-      X3D = aperm(abind(npz1$f$x_train_miss,
-                        npz1$f$x_val_miss,
-                        npz1$f$x_test_miss,
-                        along=1),
-                  c(2,1,3))                                             # switch dims so 48 time points is first dim
-      data = matrix(X3D, nrow=dim(X3D)[1]*dim(X3D)[2], ncol=dim(X3D)[3])   # stack time series data: 1st subject is 1st - 48th observations, 2nd subj is 49th - 96th, ...
-      classes=rep(classes, each = 48)
+      d3=abind(d_train, d_val, d_test, along = 1)
+      M3=abind(M_train, M_val, M_test, along = 1)
+
+      d3=aperm(d3, c(2,1,3)); M3=aperm(M3,c(2,1,3))
+      d = matrix(d3, nrow=dim(d3)[1]*dim(d3)[2], ncol=dim(d3)[3])
+      M = 1-matrix(M3, nrow=dim(M3)[1]*dim(M3)[2], ncol=dim(M3)[3])
+      colnames(d) = features; colnames(M) = features
+
+      nobs = rep(NA,ncol(d)); n1obs = rep(NA,ncol(d))
+      for(c in 1:ncol(d)){
+        nobs[c] = sum(M[,c]==1) #; n1obs[c] = any(M[,c]==1)   # n1obs: number of subjects with at least one non-missing obs for each feature
+        nonmiss = rep(NA,nrow(M)/48) # number of obs with at least 1 nonmissing entry for feature c
+        for(b in 1:(nrow(M)/48)){
+          nonmiss[b] = any(M[(b-1)*48+(1:48) , c]==1)
+        }
+        n1obs[c] = sum(nonmiss)
+      }
+
+      ## for table in data section of P2 paper: feature, %missing, %(subjects with at least one nonmissing entry)
+      tab1 = cbind(features,1-nobs/nrow(d),n1obs/(nrow(d)/48))
+      colnames(tab1)[2:3] = c("\\% Missingness", "Patients with $\\geq 1$ measurements")
+      tab1[,2] = format(as.numeric(tab1[,2]),digits=2); tab1[,3] = format(as.numeric(tab1[,3]),digits=2)
+
+      save(tab1,file="Tab1.out")
+      ############################################################################
+
+
+
+      ## run alistair et al pre-processing --> break down into first/last/median/...
+      print("Processing data...")
+      source_python("../alistair_preprocessing.py")
+
+      if(!dir.exists("set-c")){ untar("set-c.tar.gz") }
+      if(!file.exists("PhysionetChallenge2012-set-a.csv")){ process_Alistair('set-a') }
+      if(!file.exists("PhysionetChallenge2012-set-b.csv")){ process_Alistair('set-b') }
+      if(!file.exists("PhysionetChallenge2012-set-c.csv")){ process_Alistair('set-c') }
+
+      ## read-in pre-processed data
+      ## filter to just Median or last observed value
+      # d1 = read.csv("PhysionetChallenge2012-set-a.csv")
+      # d2 = read.csv("PhysionetChallenge2012-set-b.csv")
+      # d3 = read.csv("PhysionetChallenge2012-set-c.csv")
+      # library(dplyr)
+      # features = c('recordid','SAPS.I','SOFA','Length_of_stay','Survival','In.hospital_death',
+      #              'Age','Gender','Height','Weight','CCU','CSRU','SICU',
+      #              'DiasABP_median','GCS_median','Glucose_median','HR_median','MAP_median','NIDiasABP_median',
+      #              'NIMAP_median','NISysABP_median','RespRate_median','SaO2_median','Temp_median',
+      #              'ALP_last','ALT_last','AST_last','Albumin_last','BUN_last','Bilirubin_last',
+      #              'Cholesterol_last','Creatinine_last','FiO2_last','HCO3_last','HCT_last','K_last',
+      #              'Lactate_last','Mg_last','Na_last','PaCO2_last','PaO2_last','Platelets_last',
+      #              'SysABP_last','TroponinI_last','TroponinT_last','WBC_last','Weight_last','pH_last',
+      #              'MechVentStartTime','MechVentDuration','MechVentLast8Hour','UrineOutputSum')
+      #
+      # ## save filtered data
+      # d1 %>% select(features) %>% write.csv("PhysionetChallenge2012-set-a.csv", row.names=FALSE)
+      # d2 %>% select(features) %>% write.csv("PhysionetChallenge2012-set-b.csv", row.names=FALSE)
+      # d3 %>% select(features) %>% write.csv("PhysionetChallenge2012-set-c.csv", row.names=FALSE)
+
+    } else{
+      setwd("data/predicting-mortality-of-icu-patients-the-physionet-computing-in-cardiology-challenge-2012-1.0.0")
     }
+
+    d1 = read.csv("PhysionetChallenge2012-set-a.csv")
+    d2 = read.csv("PhysionetChallenge2012-set-b.csv")
+    d3 = read.csv("PhysionetChallenge2012-set-c.csv")
+
+    classes = c(d1$"In.hospital_death", d2$"In.hospital_death", d3$"In.hospital_death")
+    fit_data = list(classes=classes)
+
+    setwd("../..")
+
+    d1 = d1[,-c(2:6)]  # remove outcome variables (survival, mortality indicator, SAPS/SOFA/length of stay)
+    d2 = d2[,-c(2:6)]
+    d3 = d3[,-c(2:6)]
+
+    data = rbind(d1,d2,d3); data = data[,-1]   # remove recordid
+
+    # ntrain = 4000; nvalid = 4000; ntest = 4000
+    # ids = c( rep("train", ntrain), rep("valid", nvalid), rep("test", ntest) ); g = ids
+
+    ratio = c(train = 8,valid = 2)
+    ratio = ratio/sum(ratio)
+    set.seed(333)
+    g = sample(cut(
+      seq(nrow(data)),
+      nrow(data)*cumsum(c(0,ratio)),
+      labels = c("train","valid")
+    ))
+    params=NULL
   }else if(dataset=="MINIBOONE"){  # 130K x 50
     # pre-processing steps from https://github.com/gpapamak/maf/blob/master/datasets/miniboone.py
     f = sprintf("./Results/%s/1000_train.csv.gz",dataset)

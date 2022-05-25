@@ -27,10 +27,10 @@
 #' @param dim_z integer, dimensionality of latent z. Default: 1/4 and 1/2 of the columns of data
 #' @param niw integer, number of importance weights (samples drawn from each latent space). Default: 5
 #' @param n_epoch integer, maximum number of epochs (without early stop). Default: 2002
-#' @param data_types_HIVAE Specify for HIVAE only.
+#' @param data_types_HIVAE Data types for just HIVAE
 #' @param one_hot_max_sizes Specify for VAEAC only.
 #' @param ohms Specify for VAEAC only.
-#' @param MissingDatas Specify for VAEAC only.
+#' @param MissingData Specify for VAEAC only.
 #' @return res object: method's fit on test set, after training on training set and validating best set of hyperparameter values using the validation set.
 #'
 #' @author David K. Lim, \email{deelim@live.unc.edu}
@@ -40,13 +40,13 @@
 #' @importFrom mice mice complete
 #'
 #' @export
-tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,data_types_0, Missing, g,
+tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types=rep("real",ncol(data)),data_types_0=rep("real",ncol(data)), Missing, g,
                            rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, Cs, ignorable=F, covars_r=rep(1,ncol(data)),
                            arch="IWAE", draw_xmiss=T,  # for NIMIWAE: whether each NN is optimized separately, architecture: VAE or IWAE
                            sigma="elu", h=c(128L,64L), h_r=c(16L,32L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=NULL, bs=1000L, lr=c(0.001,0.01),
                            dim_z=as.integer(c(floor(3*ncol(data)/4),floor(ncol(data)/2),floor(ncol(data)/4))), niws=5L, n_imputations=5L, n_epochs=2002L,
                            data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
-                           MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T, early_stop = T, init0="orthogonal", init_r="orthogonal", init="default"
+                           MissingData = data, save_imps=F, dir_name=".",normalize=T, early_stop = T, init0="orthogonal", init_r="orthogonal", init="default"
 ){
   h = as.integer(h); h_r = as.integer(h_r); n_hidden_layers = as.integer(n_hidden_layers)
   if(!is.null(n_hidden_layers_r0)[1]){n_hidden_layers_r0 = as.integer(n_hidden_layers_r0)}
@@ -78,12 +78,14 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
     ))
     datas = split(data.frame(data), g)        # split data into train-valid sets
     Missings = split(data.frame(Missing), g)
+    MissingDatas = split(data.frame(MissingData), g)
 
     # datas$test = data   # test set is entire data
     # Missings$test = Missing
 
     datas$test = datas$train   # test set is training set
     Missings$test = Missings$train
+    MissingDatas$test = MissingDatas$train
 
     print("test dataset")
     print(dim(datas$test))
@@ -91,8 +93,9 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
   }else{
     datas = split(data.frame(data), g)        # split by $train, $test, and $valid (custom)
     Missings = split(data.frame(Missing), g)
+    MissingDatas = split(data.frame(MissingData), g)
     if(is.null(datas$test)){
-      datas$test = datas$train; Missings$test = Missings$train
+      datas$test = datas$train; Missings$test = Missings$train; MissingDatas$test = MissingDatas$train
     }
   }
 
@@ -351,12 +354,12 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
     for(i in 1:length(h)){for(j in 1:length(bs)){for(k in 1:length(lr)){for(l in 1:length(dim_z)){
       for(mm in 1:length(n_epochs)){for(yy in 1:length(dim_latent_y)){
         print(paste("h:",h[i],", bs:",bs[j],", lr:",lr[k],", dim_z:",dim_z[l],", n_epochs: ",n_epochs[mm], ", dim_latent_y: ", dim_latent_y[yy],sep=""))
-        save_file = sprintf("HIVAE_interm_%f_%d_%d_%d_%d_%d_%s",lr[k],bs[j],n_epochs[mm],dim_latent_s,dim_z[l],dim_latent_y[yy],model_name)
-        res_train = FUN(data=np$array(datas$train),Missing=np$array(Missings$train),data_types_HIVAE=data_types_HIVAE,
+        save_file = sprintf("%s/HIVAE_interm_%f_%d_%d_%d_%d_%d_%s",dir_name,lr[k],bs[j],n_epochs[mm],dim_latent_s,dim_z[l],dim_latent_y[yy],model_name)
+        res_train = FUN(data=np$array(datas$train),Missing=np$array(Missings$train),data_types=data_types_HIVAE,
                         lr=lr[k],bs=bs[j],n_epochs=n_epochs[mm],train=1L,
                         display=100L, n_save=1000L, restore=0L, dim_latent_s=dim_latent_s, dim_latent_z=dim_z[l],
                         dim_latent_y=dim_latent_y[yy], model_name=model_name,save_file=save_file)
-        res_valid = FUN(data=np$array(datas$valid),Missing=np$array(Missings$valid),data_types_HIVAE=data_types_HIVAE,
+        res_valid = FUN(data=np$array(datas$valid),Missing=np$array(Missings$valid),data_types=data_types_HIVAE,
                         lr=lr[k],bs=10000000L,n_epochs=1L,train=0L,
                         display=100L, n_save=1000L, restore=1L, dim_latent_s=dim_latent_s, dim_latent_z=dim_z[l],
                         dim_latent_y=dim_latent_y[yy], model_name=model_name,save_file=save_file)
@@ -393,7 +396,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
     # default: h=256, n_hidden_layers=10, dim_z=64, bs=64
 
     norm_means[one_hot_max_sizes>=2] = 0; norm_sds[one_hot_max_sizes>=2] = 1
-    n_epochs = c(200L)
+
     n_combs_params=length(h)*length(bs)*length(lr)*length(dim_z)*length(n_epochs)*length(n_hidden_layers)
 
     list_train = list()
@@ -404,8 +407,8 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
     for(i in 1:length(h)){for(j in 1:length(bs)){for(k in 1:length(lr)){for(l in 1:length(dim_z)){for(nn in 1:length(n_hidden_layers)){
       for(mm in 1:length(n_epochs)){for(nn in 1:length(n_hidden_layers)){
         print(paste("h:",h[i],", bs:",bs[j],", lr:",lr[k],", dim_z:",dim_z[l],", n_epochs: ",n_epochs[mm], ", n_hls: ", n_hidden_layers[nn],sep=""))
-        save_file = sprintf("VAEAC_interm_%d_%d_%f_%d_%d_%d_%d_%d_%f_%d",
-                            h[i],n_hidden_layers[nn],lr[k],bs[j],n_epochs[mm],dim_z[l],
+        save_file = sprintf("%s/VAEAC_interm_%d_%d_%f_%d_%d_%d_%d_%d_%f_%d",
+                            dir_name,h[i],n_hidden_layers[nn],lr[k],bs[j],n_epochs[mm],dim_z[l],
                             n_imputations,validations_per_epoch,validation_ratio,validation_iwae_n_samples)
         res_train = FUN(data=np$array(rbind(MissingDatas$train,MissingDatas$valid)),one_hot_max_sizes=one_hot_max_sizes,
                         norm_mean=np$array(norm_means),norm_std=np$array(norm_sds),

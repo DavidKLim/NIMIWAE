@@ -964,8 +964,8 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
         
         loss_fit = nimiwae_loss(iota_xfull=b_full, iota_x = b_data, mask = b_mask, mask0 = b_mask0, covar_miss = b_covar, temp=temp)
         
-        print("batch" + str(it))
-        print(loss_fit['neg_bound'])
+        # print("batch" + str(it))
+        # print(loss_fit['neg_bound'])
         
         loss = loss_fit['neg_bound']
         sum_logpz += loss_fit['sum_logpz']; sum_logqz += loss_fit['sum_logqz']; sum_logpr += loss_fit['sum_logpr']; sum_logpxobs += loss_fit['sum_logpxobs']
