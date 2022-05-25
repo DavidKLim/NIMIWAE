@@ -339,10 +339,11 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
   #   else: decoder_r[0].weight[:,~full_obs_ids] = weight_add_value + decoder_r[0].weight[:,~full_obs_ids]
     
   
-  print("Median, min, max):")
-  print(torch.median(decoder_r[0].weight))
-  print(torch.min(decoder_r[0].weight))
-  print(torch.max(decoder_r[0].weight))
+  if not ignorable:
+    print("Median, min, max):")
+    print(torch.median(decoder_r[0].weight))
+    print(torch.min(decoder_r[0].weight))
+    print(torch.max(decoder_r[0].weight))
 
   def forward(niw, iota_xfull, iota_x, mask, batch_size, tiledmask, tiled_iota_x, tiled_iota_xfull, tiled_tiled_covars_miss, temp):
     tiledtiledmask = torch.Tensor.repeat(tiledmask,[M,1]).cuda()
