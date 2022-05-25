@@ -1023,7 +1023,7 @@ def run_NIMIWAE(rdeponz,data,data_types,data_types_0,data_val,Missing,Missing_va
           else:
             with torch.no_grad(): decoder_r[1].weight[torch.abs(decoder_r[1].weight) < L1_weight] = 0           ####################### NEW
 
-      sys.exit("HERE")
+      # sys.exit("HERE")
       # print("params_xr['cat'][0] (first 4)")
       # print(params_xr['cat'][0][:4])
       # print("params_x['cat'][0] (first 4)")

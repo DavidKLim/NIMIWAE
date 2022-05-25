@@ -74,6 +74,7 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
 
     sds=list(sd1=sd1); W=list(W1=W2,W2=W2); B=list(B1=B1,B2=B2)
   }else{
+    #############
     Z = MASS::mvrnorm(N, rep(0,D), Sigma=diag(D))
     sd1 = 0.5; sd2=1
     print("Linear data generation")
@@ -111,7 +112,7 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
   classes = rbinom(N,1,probs)
 
 
-  params=list(N=N, D=D, P=P, Z=Z, H=H, W=W, B=B, beta0=beta0, beta=beta, probs=probs, seed=seed)
+  params=list(N=N, D=D, P=P, Z=Z, W=W, B=B, beta0=beta0, beta=beta, probs=probs, seed=seed)
 
   # ## simulate clustered data?
   # if(dataset=="TOYZ_CLUSTER"){
