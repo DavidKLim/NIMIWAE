@@ -39,10 +39,6 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
   # and then apply W and B (both drawn from N(0,1)) weights and biases to obtain X
   set.seed(seed)
 
-  # print("HELLO???")
-  # print(nonlinear)
-  # print("HELLO")
-
   #### NEED TO UPDATE THESE GENERATIONS
   if(nonlinear){
     print("Nonlinear data generation")
@@ -79,13 +75,13 @@ simulate_data = function(N, D, P, sim_index, seed = 9*sim_index, ratio=c(8,2), g
     sds=list(sd1=sd1); W=list(W1=W2,W2=W2); B=list(B1=B1,B2=B2)
   }else{
     Z = MASS::mvrnorm(N, rep(0,D), Sigma=diag(D))
-    sd1 = 1
+    sd1 = 0.5; sd2=1
     print("Linear data generation")
-    W = matrix(runif(D*P, 0.5, 1),nrow=D,ncol=P) # weights
-    B = matrix(rnorm(N*P, 0, sd1),nrow=N,ncol=P)
+    W = matrix(runif(D*P, 0, sd1),nrow=D,ncol=P) # weights
+    B = matrix(rnorm(N*P, 0, sd2),nrow=N,ncol=P)
 
     X = Z%*%W + B
-    sds=list(sd1=sd1)
+    sds=list(W=sd1, B=sd2)
   }
   X = apply(X,2,function(x){(x-mean(x))/sd(x)}) # pre normalize
 

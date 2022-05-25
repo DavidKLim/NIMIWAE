@@ -1,9 +1,4 @@
-# call this NIMIWAE.R
-# toy_sim.R procedure: simulate (or read) data --> simulate missingness --> 60-20-20 split --> save --> tune_hyperparams() --> output results
-
-# process_results() with each method. change file naming
-
-#' Process results: return imputation metrics
+#' NIMIWAE Main wrapper function
 #'
 #' @param data Data matrix (N x P)
 #' @param data_types Vector of data types ('real', 'count', 'pos', 'cat')
@@ -38,7 +33,7 @@
 NIMIWAE = function(data, dataset="", data_types, Missing, g=NULL, rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, ignorable=F, covars_r=rep(1,ncol(data)), arch="IWAE", draw_xmiss=T,
                    hyperparameters=list(sigma="elu", h=c(64L), h_r=64L, n_hidden_layers=c(1L,2L), n_hidden_layers_r0=c(0L,1L),
                                         bs=c(1000L), lr=c(0.001,0.01), dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))),
-                                        niw=5L, n_imputations=5L, n_epochs=2002L), save_imps=F, dir_name=".", normalize=T
+                                        niw=5L, n_imputations=5L, n_epochs=2002L), save_imps=F, dir_name=".", normalize=T, init0="orthogonal", init_r="orthogonal", init="default"
                    ){
 
   ## n_hidden_layers_r is set as the same as n_hidden_layers, unless an integer is specified
@@ -54,6 +49,8 @@ NIMIWAE = function(data, dataset="", data_types, Missing, g=NULL, rdeponz=F, lea
   if(any(data_types=="cat") & !ignorable){warning("MNAR categorical variables are still under development.")}
   if(any(data_types %in% c("count","pos"))){warning("Count/pos variables has not been rigorously tested yet, and is still under development.")}
   if(!all(g %in% c("train","valid","test"))){stop("train-valid-test split vector g should contain only values of 'train', 'valid', or 'test'")}
+  if(length(covars_r)==1 & ncol(data) > 1){warning("Only 1 value specified for covars_r, when P > 1. Assuming same value for all P")}
+  if(!all(covars_r %in% c(0,1))){stop("Covars_r should be 0 (excluded) or 1 (included)")}
   data_types_0 = data_types
 
   N = nrow(data); P=ncol(data)
@@ -98,7 +95,7 @@ NIMIWAE = function(data, dataset="", data_types, Missing, g=NULL, rdeponz=F, lea
                                             rdeponz=rdeponz, learn_r=learn_r,
                                             phi0=phi0,phi=phi,
                                             covars_r=covars_r_aug,
-                                            arch=arch, draw_xmiss=draw_xmiss, Cs=Cs, ignorable=ignorable, save_imps=save_imps, dir_name=dir_name, normalize=normalize), hyperparameters))
+                                            arch=arch, draw_xmiss=draw_xmiss, Cs=Cs, ignorable=ignorable, save_imps=save_imps, dir_name=dir_name, normalize=normalize, init0=init0, init_r=init_r, init=init), hyperparameters))
   res$time = as.numeric(Sys.time()-t0, units="secs")
   # res = tuneHyperparams(method="NIMIWAE",data=data,Missing=Missing,g=g,
   #                                rdeponz=rdeponz, learn_r=learn_r,

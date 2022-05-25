@@ -43,10 +43,10 @@
 tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,data_types_0, Missing, g,
                            rdeponz=F, learn_r=T, phi0=NULL, phi=NULL, Cs, ignorable=F, covars_r=rep(1,ncol(data)),
                            arch="IWAE", draw_xmiss=T,  # for NIMIWAE: whether each NN is optimized separately, architecture: VAE or IWAE
-                           sigma="elu", h=c(128L,64L), h_r=c(128L,64L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=NULL, bs=1000L, lr=c(0.001,0.01),
-                           dim_z=as.integer(c(floor(ncol(data)/2),floor(ncol(data)/4))), niws=5L, n_imputations=5L, n_epochs=2002L,
+                           sigma="elu", h=c(128L,64L), h_r=c(16L,32L), n_hidden_layers=c(1L,2L), n_hidden_layers_r0=NULL, bs=1000L, lr=c(0.001,0.01),
+                           dim_z=as.integer(c(floor(3*ncol(data)/4),floor(ncol(data)/2),floor(ncol(data)/4))), niws=5L, n_imputations=5L, n_epochs=2002L,
                            data_types_HIVAE=NULL, one_hot_max_sizes=NULL, ohms=NULL,
-                           MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T, early_stop = T
+                           MissingDatas = NULL, save_imps=F, dir_name=".",normalize=T, early_stop = T, init0="orthogonal", init_r="orthogonal", init="default"
 ){
   h = as.integer(h); h_r = as.integer(h_r); n_hidden_layers = as.integer(n_hidden_layers)
   if(!is.null(n_hidden_layers_r0)[1]){n_hidden_layers_r0 = as.integer(n_hidden_layers_r0)}
@@ -185,7 +185,7 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types,
                         pre_impute_value=pre_impute_value,h1=h0[i],h2=h0[i],h3=h_r0[ii],h4=h0[i], #beta=beta,beta_anneal_rate=beta_anneal_rate,
                         phi0=phi0, phi=phi, warm_start=warm_start, saved_model=warm_started_model, early_stop = early_stop, train=1L,
                         # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niws[m], dim_z=dim_z[l], L=niws[m], M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
-                        sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niw, dim_z=dim_z[l], L=niw, M=n_imputations, dir_name=dir_name, save_imps=F) #M=100L)
+                        sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=niw, dim_z=dim_z[l], L=niw, M=n_imputations, dir_name=dir_name, save_imps=F, init0=init0, init_r=init_r, init=init) #M=100L)
                         # sigma=sigma, bs = bs[j], n_epochs = n_epochs[mm], lr=lr[k], niw=5L, dim_z=dim_z[l], L=5L, M=5L, dir_name=dir_name, save_imps=F) #M=100L)
 
         res_valid = FUN(rdeponz=rdeponz, data=np$array(datas$valid),data_types=np$array(data_types),data_types_0=np$array(data_types_0),data_val=np$array(datas$valid),Missing=np$array(Missings$valid),Missing_val=np$array(Missings$valid),#probMissing=np$array(probs_Missing$valid),
