@@ -209,10 +209,12 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types=
 
         print(c(bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
                 n_hidden_layers[nn],n_hidden_layers_r[nr],h0[i],h_r0[ii],L1_weights[o1],L2_weights[o2],
-                res_train$'LB',res_train$'L1s'$'miss',res_valid$'LB',res_valid$'L1s'$'miss'))
+                as.numeric(as.character(res_train$'LB')),as.numeric(as.character(res_train$'L1s'$'miss')),
+                as.numeric(as.character(res_valid$'LB')),as.numeric(as.character(res_valid$'L1s'$'miss'))))
         LBs_trainVal[index,]=c(bs[j],lr[k],dim_z[l],niws[m],res_train$train_params$early_stop_epochs,
                                n_hidden_layers[nn],n_hidden_layers_r[nr],h0[i],h_r0[ii],L1_weights[o1],
-                               res_train$'LB',res_train$'L1s'$'miss',res_valid$'LB',res_valid$'L1s'$'miss')
+                               as.numeric(as.character(res_train$'LB')),as.numeric(as.character(res_train$'L1s'$'miss')),
+                               as.numeric(as.character(res_valid$'LB')),as.numeric(as.character(res_valid$'L1s'$'miss')))
         save(LBs_trainVal, file=sprintf("%s/LBs_trainVal",dir_name))
 
         print(LBs_trainVal[1:index,])
@@ -220,8 +222,8 @@ tuneHyperparams = function(FUN=NULL,method="NIMIWAE",dataset="",data,data_types=
         if(is.na(res_valid$'LB')){res_valid$'LB'=-Inf}
 
         # save only the best result currently (not all results) --> save memory
-        if(index==1){opt_train = res_train; opt_LB = res_valid$'LB'; save(opt_train,file=sprintf("%s/temp_opt_train.out",dir_name)); torch$save(opt_train$'saved_model',sprintf("%s/temp_opt_train_saved_model.pth",dir_name))  #; save(opt_train, file="temp_opt_train.out")
-        }else if(res_valid$'LB' > opt_LB){opt_train = res_train; opt_LB = res_valid$'LB'; save(opt_train,file=sprintf("%s/temp_opt_train.out",dir_name)); torch$save(opt_train$'saved_model',sprintf("%s/temp_opt_train_saved_model.pth",dir_name))} #; save(opt_train, file="temp_opt_train.out")
+        if(index==1){opt_train = res_train; opt_LB = as.numeric(as.character(res_valid$'LB')); save(opt_train,file=sprintf("%s/temp_opt_train.out",dir_name)); torch$save(opt_train$'saved_model',sprintf("%s/temp_opt_train_saved_model.pth",dir_name))  #; save(opt_train, file="temp_opt_train.out")
+        }else if(as.numeric(as.character(res_valid$'LB')) > opt_LB){opt_train = res_train; opt_LB = res_valid$'LB'; save(opt_train,file=sprintf("%s/temp_opt_train.out",dir_name)); torch$save(opt_train$'saved_model',sprintf("%s/temp_opt_train_saved_model.pth",dir_name))} #; save(opt_train, file="temp_opt_train.out")
 
         # if(length(L1_weights)>1){warm_started_model = res_train$'saved_model'; warm_start=T; early_stop=T}  # warm starts
 
