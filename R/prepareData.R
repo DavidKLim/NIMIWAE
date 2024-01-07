@@ -521,8 +521,8 @@ simulate_missing = function(data,miss_cols,ref_cols,pi,
         ## if(any(is.na(data[,1:3]))){stop("Missingness in 1st 3 cols of data used for nonlinear MAR interactions")}
         ## x = cbind(data[,1]*data[,2], data[,2]*data[,3], data[,1]*data[,2]*data[,3])  # 3 nonlinear predictors (observed)
         ## beta = betas[1:3]/colMeans(x)  # scale effect of each nonlinear term by mean --> scale down effect of large predictors
-        # x <- matrix(log(data[,ref_cols[j]] + abs(min(data[,ref_cols[j]])) + 0.01),ncol=1) # just the corresponding ref column
-        x <- matrix((data[,ref_cols[j]])^2,ncol=1) # just the corresponding ref column
+        x <- matrix(log(data[,ref_cols[j]] + abs(min(data[,ref_cols[j]])) + 0.01),ncol=1) # just the corresponding ref column
+        # x <- matrix((data[,ref_cols[j]])^2,ncol=1) # just the corresponding ref column
         beta=betas[miss_cols[j]]
         # jj = if(j>1){j-1}else{jj=length(ref_cols)}
         # x <- cbind(exp(data[,ref_cols[j]]), (data[,ref_cols[jj]])^2, data[,ref_cols[jj]]*data[,ref_cols[j]]) # just the corresponding ref column
@@ -550,7 +550,9 @@ simulate_missing = function(data,miss_cols,ref_cols,pi,
           # # beta = betas[1:5]/colMeans(x)  # scale effect of each nonlinear term by mean --> scale down effect of large predictors
           # # beta = betas[1:3]/colMeans(x)  # scale effect of each nonlinear term by mean --> scale down effect of large predictors
           # beta = betas[1:3]  # scale effect of each nonlinear term by mean --> scale down effect of large predictors
-          x <- matrix((data[,miss_cols[j]])^2,ncol=1) # just the corresponding ref column
+
+          x <- matrix(log(data[,miss_cols[j]]+abs(min(data[,miss_cols[j]]))+0.01),ncol=1)
+          # x <- matrix((data[,miss_cols[j]])^2,ncol=1) # just the corresponding ref column
           beta=betas[miss_cols[j]]
           # jj = if(j>1){j-1}else{jj=length(miss_cols)}
           # x <- cbind(exp(data[,miss_cols[j]]), (data[,miss_cols[jj]])^2, data[,miss_cols[jj]]*data[,miss_cols[j]]) # just the corresponding ref column
